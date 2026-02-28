@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Power Monitoring - Professional Dashboard</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --primary: #2c3e50; 
+            --primary-gradient: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            --success: #1cc88a; --warning: #f6c23e; --danger: #e74a3b; 
+            --dark: #2a2d34; --light: #f8f9fc; --info: #36b9cc;
+            --card-shadow: 0 10px 20px rgba(0,0,0,0.05);
+        }
+        
+        body { font-family: 'Poppins', sans-serif; background-color: var(--light); margin: 0; padding: 25px 20px; display: flex; flex-direction: column; align-items: center; color: var(--dark); }
+       
+        .header { background: var(--primary-gradient); color: white; width: 100%; max-width: 1100px; padding: 30px; text-align: center; border-radius: 20px; margin-bottom: 25px; box-shadow: 0 10px 25px rgba(44, 62, 80, 0.2); box-sizing: border-box; }
+        .header h1 { margin: 0; font-size: 2.2rem; font-weight: 800; letter-spacing: 0.5px; }
+        .header p { margin: 8px 0 0; opacity: 0.85; font-size: 1.1rem; }
+        
+        /* GRID KOTAK ATAS - Ukuran Teks Diperbesar */
+        .grid-container { display: grid; grid-template-columns: repeat(5, 1fr); gap: 15px; width: 100%; max-width: 1100px; margin-bottom: 25px; }
+        .card-small { background: white; border-radius: 16px; padding: 25px 15px; text-align: center; box-shadow: var(--card-shadow); border-bottom: 5px solid var(--primary); transition: transform 0.3s ease; }
+        .card-small h3 { margin: 0; font-size: 0.9rem; text-transform: uppercase; color: #a0a5b1; font-weight: 700; letter-spacing: 0.8px; }
+        .card-small .value { font-size: 1.4rem; font-weight: 800; color: var(--dark); display: block; margin-top: 10px; }
+
+        /* KARTU UTAMA WATT */
+        .card-main { background: white; border-radius: 20px; padding: 45px 35px; box-shadow: var(--card-shadow); width: 100%; max-width: 1100px; margin-bottom: 25px; text-align: center; box-sizing: border-box; border: 1px solid #eaecf4; }
+        .card-main h3 { font-size: 1.2rem; color: #a0a5b1; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        .big-watt { font-size: 6rem; font-weight: 900; color: var(--primary); margin: 0; letter-spacing: -3px; line-height: 1; }
+        
+        /* ESTIMASI BIAYA - HIJAU SOFT & UKURAN NYAMAN */
+        #valBiaya { color: #52be80; font-size: 1.3rem; font-weight: 700; margin-top: 5px; margin-bottom: 20px; opacity: 0.9; }
+
+        .device-tag { font-weight: 700; padding: 10px 35px; border-radius: 50px; background: #f0f3f6; color: var(--primary); font-size: 1.1rem; display: inline-block; margin-bottom: 25px; border: 1px solid #d1d8e0; }
+
+        .ai-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; border-top: 2px dashed #edf2f9; padding-top: 30px; margin-top: 10px; }
+        .ai-label { font-size: 0.9rem; color: #a0a5b1; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; }
+        .ai-value { font-size: 1.6rem; font-weight: 800; color: var(--warning); }
+
+        /* AREA GRAFIK */
+        .card-chart { background: white; border-radius: 20px; padding: 30px; box-shadow: var(--card-shadow); width: 100%; max-width: 1100px; box-sizing: border-box; margin-bottom: 25px; border: 1px solid #eaecf4; }
+        .card-chart h3 { margin-top: 0; font-size: 1.2rem; color: var(--primary); font-weight: 700; margin-bottom: 25px; border-left: 6px solid var(--primary); padding-left: 15px; }
+        .chart-container { position: relative; height: 320px; width: 100%; }
+
+        .chart-grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; width: 100%; max-width: 1100px; }
+
+        @media (max-width: 768px) { 
+            .grid-container { grid-template-columns: repeat(2, 1fr); } 
+            .big-watt { font-size: 4rem; }
+            .header h1 { font-size: 1.6rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Smart Power Monitoring</h1>
+        <p>Sistem Analisis Energi 900VA Non-Subsidi | Real-time WIB</p>
+    </div>
+
+    <div class="grid-container">
+        <div class="card-small" style="border-bottom-color: var(--primary);"><h3>Tegangan</h3><span class="value" id="valVolt">0 V</span></div>
+        <div class="card-small" style="border-bottom-color: var(--success);"><h3>Arus</h3><span class="value" id="valArus">0 A</span></div>
+        <div class="card-small" style="border-bottom-color: #e67e22;"><h3>Energi (kWh)</h3><span class="value" id="valEnergy">0.0000</span></div>
+        <div class="card-small" style="border-bottom-color: var(--info);"><h3>Suhu In</h3><span class="value" id="valSuhuIn">--°C</span></div>
+        <div class="card-small" style="border-bottom-color: var(--danger);"><h3>Suhu Out</h3><span class="value" id="valSuhuOut">--°C</span></div>
+    </div>
+
+    <div class="card-main">
+        <h3>Daya Aktif Saat Ini</h3>
+        <div class="big-watt"><span id="valDaya">0</span> W</div>
+        
+        <div id="valBiaya">Estimasi: Rp 0</div>
+
+        <div id="valDevice" class="device-tag">Menganalisa Beban...</div>
+        
+        <div class="ai-grid">
+            <div class="ai-box">
+                <div class="ai-label">Prediksi SARIMAX</div>
+                <div class="ai-value" id="valAiPredict">0 W</div>
+            </div>
+            <div class="ai-box" style="border-left: 2px dashed #edf2f9;">
+                <div class="ai-label">Rekomendasi RL</div>
+                <div class="ai-value" id="valRlAdvice" style="color: var(--success);">System Stable</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-chart">
+        <h3>Tren Penggunaan Daya (Watt - Real-time)</h3>
+        <div class="chart-container"><canvas id="historyChart"></canvas></div>
+    </div>
+
+    <div class="chart-grid-3">
+        <div class="card-chart">
+            <h3>Konsumsi Per Jam (Wh)</h3>
+            <div class="chart-container"><canvas id="jamChart"></canvas></div>
+        </div>
+        <div class="card-chart">
+            <h3>Tren Suhu Ruangan (°C)</h3>
+            <div class="chart-container"><canvas id="suhuChart"></canvas></div>
+        </div>
+        <div class="card-chart">
+            <h3>Total Energi Harian (kWh)</h3>
+            <div class="chart-container"><canvas id="harianChart"></canvas></div>
+        </div>
+    </div>
+
+<script>
+    const firebaseConfig = { databaseURL: "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app" };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    Chart.defaults.animation = { duration: 1000, easing: 'easeOutQuart' };
+    Chart.defaults.font.family = "'Poppins', sans-serif";
+    Chart.defaults.font.size = 13;
+
+    let liveWatt = 0, liveSuhuIn = 0, liveSuhuOut = 27, liveEnergy = 0;
+
+    const daftarPerangkat = [
+        { nama: "AC", wattMin: 340, wattMax: 500 },
+        { nama: "Magicom", wattMin: 250, wattMax: 339 },
+        { nama: "Laptop", wattMin: 28, wattMax: 100 },
+        { nama: "Lampu/Charger", wattMin: 2, wattMax: 27 }
+    ];
+
+    // --- INISIALISASI GRAFIK ---
+    const ctxLive = document.getElementById('historyChart').getContext('2d');
+    const chartGue = new Chart(ctxLive, {
+        type: 'line',
+        data: { labels: [], datasets: [{ 
+            label: 'Daya (Watt)', data: [], borderColor: '#2c3e50', backgroundColor: 'rgba(44, 62, 80, 0.05)', fill: true, tension: 0.4, pointRadius: 4 
+        }]},
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    const jamChart = new Chart(document.getElementById('jamChart'), {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'Wh', data: [], backgroundColor: '#f6c23e' }] },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    const suhuChart = new Chart(document.getElementById('suhuChart'), {
+        type: 'line',
+        data: { labels: [], datasets: [
+            { label: 'Indoor', data: [], borderColor: '#36b9cc', tension: 0.4 },
+            { label: 'Outdoor', data: [], borderColor: '#e74a3b', borderDash: [5,5], tension: 0.4 }
+        ]},
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    const harianChart = new Chart(document.getElementById('harianChart'), {
+        type: 'bar',
+        data: { labels: [], datasets: [{ label: 'kWh', data: [], backgroundColor: '#1cc88a' }] },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    // --- FUNGSI AMBIL DATA LAMA ---
+   function ambilDataLama() {
+    console.log("Memuat memori grafik...");
+    db.ref('history').limitToLast(20).once('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            let labels = [], dayaData = [], sIn = [], sOut = [];
+            
+            Object.keys(data).forEach(key => {
+                const item = data[key];
+                // Hanya masukkan data yang sudah dapet stempel waktu dari Python
+                if(item.waktu) {
+                    labels.push(item.waktu);
+                    dayaData.push(item.Daya || 0);
+                    sIn.push(item.Suhu || 0);
+                    sOut.push(liveSuhuOut);
+                }
+            });
+
+            // Masukkan ke grafik
+            chartGue.data.labels = labels;
+            chartGue.data.datasets[0].data = dayaData;
+            
+            suhuChart.data.labels = labels;
+            suhuChart.data.datasets[0].data = sIn;
+            suhuChart.data.datasets[1].data = sOut;
+            
+            chartGue.update();
+            suhuChart.update();
+            console.log("Memori grafik berhasil dipulihkan!");
+        }
+    });
+}
+// Panggil fungsi ini 3 detik setelah page load agar data standby
+setTimeout(ambilDataLama, 3000);
+
+    // --- REAL-TIME LISTENERS ---
+    db.ref('Monitoring').on('value', (snapshot) => {
+        const d = snapshot.val();
+        if (d) {
+            liveWatt = d.Daya || 0; 
+            liveSuhuIn = d.Suhu || 0; 
+            liveEnergy = d.Energy || 0;
+            
+            // Hitung Biaya (900VA Non-Subsidi)
+            let rupiah = liveEnergy * 1352;
+
+            document.getElementById('valVolt').innerText = (d.Tegangan || 0).toFixed(1) + " V";
+            document.getElementById('valArus').innerText = (d.Arus || 0).toFixed(3) + " A";
+            document.getElementById('valEnergy').innerText = liveEnergy.toFixed(4);
+            document.getElementById('valSuhuIn').innerText = liveSuhuIn.toFixed(1) + "°C";
+            document.getElementById('valDaya').innerText = liveWatt.toFixed(1);
+            
+            // Update Biaya dengan Format IDR
+            document.getElementById('valBiaya').innerText = "Estimasi: Rp " + rupiah.toLocaleString('id-ID', {maximumFractionDigits: 0});
+        
+            let det = "Beban Terdeteksi";
+            const match = daftarPerangkat.find(p => liveWatt >= p.wattMin && liveWatt <= p.wattMax);
+            if (match) det = match.nama; else if (liveWatt < 2) det = "Standby / Off";
+            document.getElementById('valDevice').innerText = det;
+        }
+    });
+
+    db.ref('Kwh_Jam').limitToLast(12).on('value', (snapshot) => {
+        const d = snapshot.val();
+        if (d) {
+            jamChart.data.labels = Object.keys(d).map(k => d[k].jam + ":00");
+            jamChart.data.datasets[0].data = Object.keys(d).map(k => d[k].wh_pakai);
+            jamChart.update();
+        }
+    });
+
+    db.ref('Kwh_Harian').limitToLast(7).on('value', (snapshot) => {
+        const d = snapshot.val();
+        if (d) {
+            harianChart.data.labels = Object.keys(d).map(k => d[k].hari);
+            harianChart.data.datasets[0].data = Object.keys(d).map(k => d[k].kwh_pakai);
+            harianChart.update();
+        }
+    });
+
+    db.ref('Prediksi').on('value', (snapshot) => {
+        const ai = snapshot.val();
+        if(ai) {
+            document.getElementById('valAiPredict').innerText = (ai.next_watt || 0).toFixed(1) + " W";
+            document.getElementById('valRlAdvice').innerText = ai.advice || "System Stable";
+        }
+    });
+
+    // --- WEATHER & UPDATER ---
+    async function updateSuhuOut() {
+        try {
+            const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=Purwokerto&appid=beefa531dea387fcb2f8ee59a46d472c&units=metric`);
+            const data = await res.json();
+            if (data.main) { liveSuhuOut = data.main.temp; document.getElementById('valSuhuOut').innerText = liveSuhuOut.toFixed(1) + "°C"; }
+        } catch (e) { console.warn("Weather API Error"); }
+    }
+    updateSuhuOut(); setInterval(updateSuhuOut, 900000);
+
+    setInterval(() => {
+        const jam = new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        chartGue.data.labels.push(jam); 
+        chartGue.data.datasets[0].data.push(liveWatt);
+        if(chartGue.data.labels.length > 15) { chartGue.data.labels.shift(); chartGue.data.datasets[0].data.shift(); }
+        chartGue.update();
+
+        suhuChart.data.labels.push(jam);
+        suhuChart.data.datasets[0].data.push(liveSuhuIn);
+        suhuChart.data.datasets[1].data.push(liveSuhuOut);
+        if(suhuChart.data.labels.length > 15) { suhuChart.data.labels.shift(); suhuChart.data.datasets[0].data.shift(); suhuChart.data.datasets[1].data.shift(); }
+        suhuChart.update();
+    }, 10000);
+</script>
+</body>
+</html>
