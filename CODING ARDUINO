@@ -1,0 +1,95 @@
+#include <WiFi.h>
+#include <WiFiMulti.h>
+#include <FirebaseESP32.h>
+#include <PZEM004Tv30.h>
+#include "DHT.h"
+
+WiFiMulti wifiMulti;
+
+// --- 1. KONFIGURASI SENSOR ---
+#define DHTPIN 4
+#define DHTTYPE DHT22  
+DHT dht(DHTPIN, DHTTYPE);
+
+// Menggunakan Serial2 (RX=16, TX=17) untuk PZEM
+PZEM004Tv30 pzem(Serial2, 16, 17);
+
+// --- 2. KONFIGURASI FIREBASE ---
+#define FIREBASE_HOST "isi sendiri"
+#define FIREBASE_AUTH "isi sendiri" 
+
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+
+unsigned long lastHistoryMillis = 0;
+
+void setup() {
+  Serial.begin(115200);
+  
+  dht.begin();
+
+  // Koneksi WiFi 
+  wifiMulti.addAP("wifi", "pw");
+  wifiMulti.addAP("wifi", "pw");
+  wifiMulti.addAP("wifi", "pw");  
+  wifiMulti.addAP("wifi", "pw");
+
+  Serial.print("Menghubungkan WiFi...");
+  while (wifiMulti.run() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Terhubung!");
+
+  config.host = FIREBASE_HOST;
+  config.signer.tokens.legacy_token = FIREBASE_AUTH;
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+  
+  Serial.println("Sistem Siap! Arus, Daya, dan Energi dipantau.");
+}
+
+void loop() {
+  if (wifiMulti.run() == WL_CONNECTED) {
+    // A. BACA SENSOR (Arus sudah ditambahkan)
+    float v = pzem.voltage();
+    float i = pzem.current(); // Ini dia yang tadi ilang!
+    float p = pzem.power();
+    float e = pzem.energy();
+    float h = dht.readHumidity();
+    float t = dht.readTemperature();
+
+    if (isnan(v) || isnan(i) || isnan(t)) {
+      Serial.println(" Sensor Error! Cek kabel PZEM/DHT.");
+    } else {
+      // B. UPDATE MONITORING (DASHBOARD LIVE)
+      FirebaseJson live;
+      live.set("Tegangan", v);
+      live.set("Arus", i);    // Update Arus ke dashboard
+      live.set("Daya", p);
+      live.set("Energy", e);
+      live.set("Suhu", t);
+      live.set("Kelembapan", h);
+      Firebase.setJSON(fbdo, "/Monitoring", live);
+
+      // C. SIMPAN KE HISTORY (SETIAP 1 MENIT)
+      if (millis() - lastHistoryMillis >= 60000) {
+        FirebaseJson hist;
+        hist.set("Arus", i);   // Simpan Arus ke history juga
+        hist.set("Daya", p);   
+        hist.set("Suhu", t);   
+        hist.set("Energy", e); 
+        
+        Serial.print("Pushing data ke history... ");
+        if (Firebase.pushJSON(fbdo, "/history", hist)) {
+          Serial.println("✅ BERHASIL!");
+          lastHistoryMillis = millis();
+        } else {
+          Serial.println("❌ GAGAL: " + fbdo.errorReason());
+        }
+      }
+    }
+  }
+  delay(2000); 
+}
