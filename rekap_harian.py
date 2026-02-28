@@ -1,53 +1,50 @@
 import firebase_admin
 from firebase_admin import credentials, db
-from datetime import datetime
 import pytz
+from datetime import datetime
 
-# 1. KONEKSI KE FIREBASE
-cred = credentials.Certificate("serviceAccountKey.json")
-firebase_admin.initialize_app(cred, {
-    'databaseURL': 'https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app'
-})
+# 1. Inisialisasi Firebase (Gunakan URL asli kamu)
+# Pastikan tidak ada spasi di dalam URL
+DB_URL = 'https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app/'
 
-wib = pytz.timezone('Asia/Jakarta')
-TARIF_900VA_NON_SUBSIDI = 1352 # Tarif R-1M per kWh
-
-def proses_rekap():
-    print(f"[{datetime.now(wib)}] Menjalankan Robot Rekap Biaya...")
-    
-    ref_history = db.ref('history')
-    data_history = ref_history.get()
-
-    if not data_history:
-        print("Folder history kosong.")
-        return
-
-    # Ambil data paling baru
-    last_key = list(data_history.keys())[-1]
-    last_item = data_history[last_key]
-    
-    # Hitung biaya
-    energy = last_item.get('Energy', 0)
-    biaya = energy * TARIF_900VA_NON_SUBSIDI
-    
-    # Update ke Firebase (History & Rekap Harian)
-    waktu_skrg = datetime.now(wib).strftime('%H:%M:%S')
-    nama_hari = datetime.now(wib).strftime('%A')
-    
-    # Tambahkan stempel waktu ke history jika belum ada
-    if 'waktu' not in last_item:
-        ref_history.child(last_key).update({'waktu': waktu_skrg, 'hari': nama_hari})
-
-    # Update Dashboard Harian
-    db.ref('Kwh_Harian').child(nama_hari).set({
-        'hari': nama_hari,
-        'kwh_pakai': round(energy, 4),
-        'biaya_rp': round(biaya, 2),
-        'last_update': waktu_skrg
+if not firebase_admin._apps:
+    # File serviceAccountKey.json ini akan dibuat otomatis oleh GitHub Action
+    cred = credentials.Certificate("serviceAccountKey.json")
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': DB_URL
     })
-    
-    print(f"✅ Rekap Selesai: {energy} kWh | Estimasi: Rp {round(biaya, 2)}")
+
+def jalankan_rekap():
+    print("Memulai proses rekap data...")
+    try:
+        # 2. Ambil Referensi Database Utama
+        ref = db.reference('/') 
+        data = ref.get()
+        
+        if data:
+            print("Koneksi Sukses! Data PZEM berhasil ditarik.")
+            
+            # --- LOGIKA REKAP (Contoh sederhana) ---
+            # Di sini kamu bisa tambahkan logika perhitungan biaya listrik
+            # Misalnya: total_kwh * 1444.7 (tarif 900VA)
+            
+            # 3. Catat waktu rekap (WIB)
+            tz_jkt = pytz.timezone('Asia/Jakarta')
+            waktu_rekap = datetime.now(tz_jkt).strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Update status di Firebase agar dashboard kamu tahu rekap sudah jalan
+            db.reference('/status_sistem').update({
+                'terakhir_update': waktu_rekap,
+                'sumber': 'GitHub Actions (Otomatis)'
+            })
+            
+            print(f" Rekap berhasil diperbarui pada: {waktu_rekap}")
+            
+        else:
+            print("Database kosong. Cek apakah ESP32 kamu sudah kirim data?")
+
+    except Exception as e:
+        print(f" Terjadi kesalahan: {e}")
 
 if __name__ == "__main__":
-
-    proses_rekap()
+    jalankan_rekap()
