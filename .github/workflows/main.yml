@@ -21,7 +21,9 @@ jobs:
         run: pip install firebase-admin pytz
 
       - name: Create Key
-        run: echo "${{ secrets.FIREBASE_KEY }}" > serviceAccountKey.json
+        env:
+          FB_KEY: ${{ secrets.FIREBASE_KEY }}
+        run: echo "$FB_KEY" > serviceAccountKey.json
 
       - name: Run Script
         run: python rekap_harian.py
