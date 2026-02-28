@@ -4,8 +4,7 @@ from datetime import datetime
 import pytz
 
 # 1. KONEKSI KE FIREBASE
-# Sesuaikan path ke file JSON kamu
-cred = credentials.Certificate("firebase-project/serviceAccountKey.json")
+cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app'
 })
@@ -50,4 +49,5 @@ def proses_rekap():
     print(f"✅ Rekap Selesai: {energy} kWh | Estimasi: Rp {round(biaya, 2)}")
 
 if __name__ == "__main__":
+
     proses_rekap()
