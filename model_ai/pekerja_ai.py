@@ -36,9 +36,11 @@ print("✅ Berhasil login ke Firebase melalui jalur aman!")
 print("🧠 Memuat otak SARIMAX dan RL...")
 
 # Perhatikan tambahan 'model/' di depan nama file
-with open('model/model_sarimax_kairo.pkl', 'rb') as f:
+# Perhatikan nama foldernya sekarang disesuaikan menjadi 'model_ai/'
+with open('model_ai/model_sarimax_kairo.pkl', 'rb') as f:
     sarimax = pickle.load(f)
 
+model_rl = PPO.load("model_ai/model_rl_kairo.zip")
 # Perhatikan tambahan 'model/' di depan nama file
 model_rl = PPO.load("model/model_rl_kairo.zip")
 
@@ -98,3 +100,4 @@ db.reference('Hasil_AI').set({
 })
 
 print("✅ Laporan berhasil dikirim ke Firebase! Pekerja AI kembali tidur.")
+
