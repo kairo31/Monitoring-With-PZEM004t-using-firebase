@@ -9,7 +9,7 @@ from stable_baselines3 import PPO
 from datetime import datetime
 import pytz
 
-print("🤖 Pekerja AI succesfull...")
+print("🤖 Pekerja AI successful...")
 
 # ==========================================
 # 1. INISIALISASI FIREBASE (VIA GITHUB SECRETS)
@@ -31,18 +31,16 @@ if not firebase_admin._apps:
 print("✅ Berhasil login ke Firebase melalui jalur aman!")
 
 # ==========================================
-# 2. LOAD OTAK AI (DARI FOLDER 'model')
+# 2. LOAD OTAK AI (DARI FOLDER 'model_ai')
 # ==========================================
 print("🧠 Memuat otak SARIMAX dan RL...")
 
-# Perhatikan tambahan 'model/' di depan nama file
-# Perhatikan nama foldernya sekarang disesuaikan menjadi 'model_ai/'
-with open('model_ai/model_sarimax_kairo.pkl', 'rb') as f:
+# Membaca file SARIMAX yang benar menggunakan pickle
+with open('model_ai/model_sarimax_kairo (1).pkl', 'rb') as f:
     sarimax = pickle.load(f)
 
-model_rl = PPO.load("model/model_ai/model_sarimax_kairo (1).pkl")
-# Perhatikan tambahan 'model/' di depan nama file
-model_rl = PPO.load("model/model_rl_kairo.zip(1)")
+# Membaca file RL yang benar menggunakan PPO
+model_rl = PPO.load("model_ai/model_rl_kairo (1).zip")
 
 # ==========================================
 # 3. AMBIL DATA TERBARU DARI FIREBASE
@@ -100,7 +98,3 @@ db.reference('Hasil_AI').set({
 })
 
 print("✅ Laporan berhasil dikirim ke Firebase! Pekerja AI kembali tidur.")
-
-
-
-
