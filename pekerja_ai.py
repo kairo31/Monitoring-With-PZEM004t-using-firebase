@@ -40,7 +40,7 @@ print("🧠 Memuat otak SARIMAX dan RL...")
 with open('model_ai/model_sarimax_kairo.pkl', 'rb') as f:
     sarimax = pickle.load(f)
 
-model_rl = PPO.load("model_ai/model_sarimax_kairo (1).pkl")
+model_rl = PPO.load("model/model_ai/model_sarimax_kairo (1).pkl")
 # Perhatikan tambahan 'model/' di depan nama file
 model_rl = PPO.load("model/model_rl_kairo.zip(1)")
 
@@ -100,6 +100,7 @@ db.reference('Hasil_AI').set({
 })
 
 print("✅ Laporan berhasil dikirim ke Firebase! Pekerja AI kembali tidur.")
+
 
 
 
