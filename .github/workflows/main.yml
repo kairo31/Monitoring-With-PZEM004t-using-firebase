@@ -27,3 +27,8 @@ jobs:
 
       - name: Run Script
         run: python rekap_harian.py
+
+        - name: Jalankan Mandor AI
+        env:
+          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }} 
+        run: python pekerja_ai.py
