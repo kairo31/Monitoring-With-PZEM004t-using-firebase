@@ -1,12 +1,12 @@
-name: Robot-Rekap-Kairo
+name: Robot-Rekap-Kairo-dan-AI
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '*/5 * * * *' # Diubah ke 5 menit sekali agar AI responsif menjaga listrik
 
 jobs:
-  job-rekap:
+  job-rekap-dan-ai:
     runs-on: ubuntu-latest
     steps:
       - name: Ambil Kode
@@ -15,20 +15,22 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.10' # Wajib 3.10 agar otak AI bisa dibaca
 
       - name: Install Library
-        run: pip install firebase-admin pytz
+        run: |
+          pip install firebase-admin pytz
+          pip install -r requirements.txt
 
-      - name: Create Key
+      - name: Create Key untuk Rekap Harian
         env:
           FB_KEY: ${{ secrets.FIREBASE_KEY }}
         run: echo "$FB_KEY" > serviceAccountKey.json
 
-      - name: Run Script
+      - name: Run Script Rekap Harian
         run: python rekap_harian.py
 
-        - name: Jalankan Mandor AI
+      - name: Jalankan Mandor AI
         env:
-          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }} 
+          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
         run: python pekerja_ai.py
