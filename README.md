@@ -1,4 +1,3 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/README.md b/README.md
 index a2976c9d8fe36472de24fa985cc3020518b920fe..e04c7aa6fd1d816c0ebaa729754707bf43804413 100644
 --- a/README.md
@@ -53,6 +52,3 @@ index a2976c9d8fe36472de24fa985cc3020518b920fe..e04c7aa6fd1d816c0ebaa729754707bf
 +  --resample-interval 1min \
 +  --seasonal-period 12
 +```
- 
-EOF
-)
