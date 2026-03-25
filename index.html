@@ -107,6 +107,7 @@
             text-align: center;
             box-shadow: var(--card-shadow);
             border: 1px solid #eaecf4;
+            position: relative;
         }
 
         .card-main h3 { margin-top: 0; color: #858796; font-size: 1rem; text-transform: uppercase; }
@@ -167,7 +168,7 @@
         /* GRID CONTROL PANEL (User Input & Budget) */
         .control-panel {
             display: grid;
-            grid-template-columns: 1fr 1fr; /* Berdampingan kiri-kanan */
+            grid-template-columns: 1fr 1fr;
             gap: 25px;
         }
 
@@ -314,6 +315,10 @@
     </div>
 
     <div class="card-main">
+        <div id="valLastUpdate" style="font-size: 0.85rem; font-weight: 700; color: var(--success); margin-bottom: 5px; letter-spacing: 0.5px;">
+            🟢 Update Terakhir: --:--:-- WIB
+        </div>
+
         <h3>Daya Aktif Saat Ini</h3>
         <div class="big-watt"><span id="valDaya">0</span> W</div>
 
@@ -427,10 +432,48 @@
     const ctxJam = new Chart(document.getElementById('chartJam'), { type: 'bar', data: { labels: [], datasets: [{ label: 'Wh', backgroundColor: '#f6c23e', borderRadius: 4, data: [] }]}, options: chartOptions });
     const ctxHarian = new Chart(document.getElementById('chartHarian'), { type: 'bar', data: { labels: [], datasets: [{ label: 'kWh', backgroundColor: '#1cc88a', borderRadius: 4, data: [] }]}, options: chartOptions });
 
-    // Tarik Data Monitoring (Realtime)
+    // -------------------------------------------------------------------------
+    // FITUR BARU: Tarik Data History Agar Grafik Tidak Kosong Saat Di-Refresh
+    // -------------------------------------------------------------------------
+    db.ref('history').limitToLast(15).once('value', (s) => {
+        const d = s.val(); if(!d) return;
+        
+        Object.keys(d).forEach(k => {
+            const item = d[k];
+            let timeStr = "";
+            
+            // Cek apakah ada waktu dari sensor (format Unix ms)
+            if (item.waktu) {
+                timeStr = new Date(Number(item.waktu)).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+            } else {
+                timeStr = new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+            }
+            
+            // Masukkan data history ke dalam Array Grafik
+            ctxWatt.data.labels.push(timeStr);
+            ctxWatt.data.datasets[0].data.push(item.Daya || 0);
+            
+            ctxSuhu.data.labels.push(timeStr);
+            ctxSuhu.data.datasets[0].data.push(item.Suhu || 0);
+            ctxSuhu.data.datasets[1].data.push(liveSOut);
+        });
+        
+        ctxWatt.update();
+        ctxSuhu.update();
+    });
+
+    // -------------------------------------------------------------------------
+    // Tarik Data Monitoring (Realtime + Fitur Waktu Update Terakhir)
+    // -------------------------------------------------------------------------
     db.ref('Monitoring').on('value', (s) => {
         const d = s.val(); if(!d) return;
         liveW = d.Daya || 0; liveSIn = d.Suhu || 0;
+        
+        // Update Waktu Terakhir Sensor
+        const nowStr = new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        document.getElementById('valLastUpdate').innerText = "🟢 Update Terakhir: " + nowStr + " WIB";
+
+        // Update Nilai Utama
         document.getElementById('valVolt').innerText = (d.Tegangan || 0).toFixed(1) + ' V';
         document.getElementById('valArus').innerText = (d.Arus || 0).toFixed(3) + ' A';
         document.getElementById('valEnergy').innerText = (d.Energy || 0).toFixed(4);
@@ -488,7 +531,6 @@
         }
     });
 
-    // Tarik & Isi Nilai Budget Saat Ini
     db.ref('user_preferences').on('value', (s) => {
         const d = s.val(); if(!d) return;
         if (!document.activeElement || document.activeElement.id !== 'monthlyBudgetInput') {
@@ -496,7 +538,6 @@
         }
     });
 
-    // Tarik & Isi Nilai Checkbox Saat Ini
     db.ref('log_konfirmasi').limitToLast(1).on('value', (s) => {
         const data = s.val(); if(!data) return;
         const lastLog = data[Object.keys(data)[0]];
