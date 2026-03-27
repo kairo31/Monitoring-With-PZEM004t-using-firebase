@@ -390,8 +390,14 @@
                 </div>
             </div>
         </div>
+    </div> 
 
-    </div> <div class="card-chart">
+    <div class="card-chart">
+        <h3>Visual Prediksi SARIMAX vs Aktual</h3>
+        <div class="chart-container"><canvas id="chartSarimax"></canvas></div>
+    </div>
+
+    <div class="card-chart">
         <h3>Tren Konsumsi Daya (Real-time Watt)</h3>
         <div class="chart-container"><canvas id="chartWatt"></canvas></div>
     </div>
@@ -422,9 +428,14 @@
     // 2. Setup Chart.js
     Chart.defaults.font.family = "'Poppins', sans-serif";
     const chartOptions = { responsive: true, maintainAspectRatio: false, animation: { duration: 1000 } };
+    const asNumber = (value, fallback = 0) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    };
     const currency = (value) => "Rp " + Number(value || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
 
-    let liveW = 0, liveSIn = 0, liveSOut = 27;
+    // Variabel Global Real-time
+    let liveW = 0, liveSIn = 0, liveSOut = 27, livePredictedW = 0;
 
     // Inisialisasi Grafik
     const ctxWatt = new Chart(document.getElementById('chartWatt'), { type: 'line', data: { labels: [], datasets: [{ label: 'Watt', data: [], borderColor: '#2c3e50', fill: true, backgroundColor: 'rgba(44,62,80,0.05)', tension: 0.4 }]}, options: chartOptions });
@@ -432,8 +443,21 @@
     const ctxJam = new Chart(document.getElementById('chartJam'), { type: 'bar', data: { labels: [], datasets: [{ label: 'Wh', backgroundColor: '#f6c23e', borderRadius: 4, data: [] }]}, options: chartOptions });
     const ctxHarian = new Chart(document.getElementById('chartHarian'), { type: 'bar', data: { labels: [], datasets: [{ label: 'kWh', backgroundColor: '#1cc88a', borderRadius: 4, data: [] }]}, options: chartOptions });
 
+    // INISIALISASI GRAFIK BARU: SARIMAX
+    const ctxSarimax = new Chart(document.getElementById('chartSarimax'), {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: 'Aktual (W)', data: [], borderColor: '#2c3e50', backgroundColor: 'rgba(44,62,80,0.08)', tension: 0.3 },
+                { label: 'Prediksi SARIMAX (W)', data: [], borderColor: '#f6c23e', borderDash: [6, 4], tension: 0.3, spanGaps: true }
+            ]
+        },
+        options: chartOptions
+    });
+
     // -------------------------------------------------------------------------
-    // FITUR BARU: Tarik Data History Agar Grafik Tidak Kosong Saat Di-Refresh
+    // PERBAIKAN REFRESH: Tarik Data History Agar Semua Grafik Tidak Kosong
     // -------------------------------------------------------------------------
     db.ref('history').limitToLast(15).once('value', (s) => {
         const d = s.val(); if(!d) return;
@@ -449,31 +473,33 @@
                 timeStr = new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
             }
             
-            // Masukkan data history ke dalam Array Grafik
+            // Masukkan data history ke dalam Array Grafik Watt & Suhu
             ctxWatt.data.labels.push(timeStr);
             ctxWatt.data.datasets[0].data.push(item.Daya || 0);
             
             ctxSuhu.data.labels.push(timeStr);
             ctxSuhu.data.datasets[0].data.push(item.Suhu || 0);
             ctxSuhu.data.datasets[1].data.push(liveSOut);
+
+            // Pre-fill SARIMAX Chart supaya tidak kosong saat di-refresh!
+            ctxSarimax.data.labels.push(timeStr);
+            ctxSarimax.data.datasets[0].data.push(item.Daya || 0); // Data Aktual
+            ctxSarimax.data.datasets[1].data.push(null);           // Data Prediksi Historis (biarkan null agar garis menyambung ke depan)
         });
         
         ctxWatt.update();
         ctxSuhu.update();
+        ctxSarimax.update();
     });
 
-    // -------------------------------------------------------------------------
-    // Tarik Data Monitoring (Realtime + Fitur Waktu Update Terakhir)
-    // -------------------------------------------------------------------------
+    // Tarik Data Monitoring (Realtime)
     db.ref('Monitoring').on('value', (s) => {
         const d = s.val(); if(!d) return;
         liveW = d.Daya || 0; liveSIn = d.Suhu || 0;
         
-        // Update Waktu Terakhir Sensor
         const nowStr = new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
         document.getElementById('valLastUpdate').innerText = "🟢 Update Terakhir: " + nowStr + " WIB";
 
-        // Update Nilai Utama
         document.getElementById('valVolt').innerText = (d.Tegangan || 0).toFixed(1) + ' V';
         document.getElementById('valArus').innerText = (d.Arus || 0).toFixed(3) + ' A';
         document.getElementById('valEnergy').innerText = (d.Energy || 0).toFixed(4);
@@ -509,18 +535,25 @@
     });
 
     // Tarik Data Output AI (Sisi Kiri Dashboard)
-    db.ref('Hasil_AI').on('value', (s) => {
-        const d = s.val(); if(!d) return;
-        
-        document.getElementById('valAi').innerText = (d.prediksi_daya_selanjutnya || 0).toFixed(1) + ' W';
+    function applyAiPayload(d) {
+        if (!d) return;
+
+        const predictedWatt = asNumber(d.prediksi_daya_selanjutnya ?? d.next_watt);
+        livePredictedW = predictedWatt; // Simpan nilai prediksi AI untuk digambar oleh loop 10-detik
+
+        document.getElementById('valAi').innerText = predictedWatt.toFixed(1) + ' W';
         document.getElementById('valDailyForecast').innerText = 'Biaya prediksi harian: ' + currency(d.prediksi_biaya_harian_rp);
-        document.getElementById('valRl').innerText = d.rekomendasi_ppo || 'Stable';
+        document.getElementById('valRl').innerText = d.rekomendasi_rl || d.advice || d.rekomendasi_ppo || 'Stable';
         document.getElementById('valBudgetAdvice').innerText = d.rekomendasi_budget || 'Menunggu analisis...';
         
-        // Data Status Budget Kecil
         document.getElementById('valMonthlyProjection').innerText = currency(d.proyeksi_bulanan_rp);
         document.getElementById('valGapToTarget').innerText = currency(d.selisih_target_bulanan_rp);
         
+        const suggestedBudget = asNumber(d.target_bulanan_rp, NaN);
+        if (Number.isFinite(suggestedBudget) && (!document.activeElement || document.activeElement.id !== 'monthlyBudgetInput')) {
+            document.getElementById('monthlyBudgetInput').value = suggestedBudget;
+        }
+
         const chip = document.getElementById('budgetStatusChip');
         if (d.status_target === 'on_track') {
             chip.innerText = '🎯 TARGET AMAN';
@@ -529,6 +562,10 @@
             chip.innerText = '⚠️ PERLU HEMAT';
             chip.className = 'status-chip warn';
         }
+    }
+
+    db.ref('Hasil_AI').on('value', (s) => {
+        applyAiPayload(s.val());
     });
 
     db.ref('user_preferences').on('value', (s) => {
@@ -548,46 +585,35 @@
         document.getElementById('chkLaptop').checked = !!lastLog.Laptop;
     });
 
-    // -------------------------------------------------------------
-    // FUNGSI ANIMASI TOMBOL CERDAS (SMART BUTTON)
-    // -------------------------------------------------------------
+    // FUNGSI ANIMASI TOMBOL CERDAS
     async function executeSmartButton(btnId, savingText, successText, dbActionCallback) {
         const btn = document.getElementById(btnId);
         const originalText = btn.innerText;
-        const originalBg = window.getComputedStyle(btn).backgroundColor;
 
-        // Fase 1: Status Loading
         btn.innerText = "⏳ " + savingText;
         btn.style.opacity = "0.7";
         btn.disabled = true;
 
         try {
-            // Jalankan pengiriman ke database
             await dbActionCallback();
-
-            // Fase 2: Sukses Tersimpan (Berubah Hijau)
             btn.innerText = "✅ " + successText;
-            btn.style.backgroundColor = "var(--success)"; // Warna Hijau
+            btn.style.backgroundColor = "var(--success)";
             btn.style.opacity = "1";
-
         } catch (error) {
-            // Jika Gagal
             btn.innerText = "❌ Gagal Menyimpan";
             btn.style.backgroundColor = "var(--danger)";
         } finally {
-            // Fase 3: Kembali Normal setelah 2.5 Detik
             setTimeout(() => {
                 btn.innerText = originalText;
-                btn.style.backgroundColor = ""; // Reset ke CSS bawaan
+                btn.style.backgroundColor = ""; 
                 btn.disabled = false;
             }, 2500);
         }
     }
 
-    // Aksi Tombol Simpan Target
     document.getElementById('saveBudgetBtn').addEventListener('click', () => {
         const budgetValue = Number(document.getElementById('monthlyBudgetInput').value || 0);
-        if (budgetValue <= 0) return; // Abaikan jika kosong/nol
+        if (budgetValue <= 0) return; 
 
         executeSmartButton('saveBudgetBtn', 'Menyimpan...', 'Tersimpan!', async () => {
             await db.ref('user_preferences').update({
@@ -597,7 +623,6 @@
         });
     });
 
-    // Aksi Tombol Konfirmasi Perangkat
     document.getElementById('saveDeviceBtn').addEventListener('click', () => {
         executeSmartButton('saveDeviceBtn', 'Mengirim...', 'Terkirim ke AI!', async () => {
             await db.ref('log_konfirmasi').push({
@@ -611,7 +636,6 @@
         });
     });
 
-    // Cuaca Realtime
     async function getOutTemp() {
         try {
             const res = await fetch('https://api.openweathermap.org/data/2.5/weather?q=Purwokerto&appid=beefa531dea387fcb2f8ee59a46d472c&units=metric');
@@ -621,16 +645,33 @@
     }
     getOutTemp();
 
-    // Loop Chart 10 Detik
+    // -------------------------------------------------------------------------
+    // PERBAIKAN REFRESH: Loop Chart 10 Detik Termasuk Grafik SARIMAX!
+    // -------------------------------------------------------------------------
     setInterval(() => {
         const now = new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        
+        // Update Chart Watt
         ctxWatt.data.labels.push(now); ctxWatt.data.datasets[0].data.push(liveW);
         if (ctxWatt.data.labels.length > 15) { ctxWatt.data.labels.shift(); ctxWatt.data.datasets[0].data.shift(); }
         ctxWatt.update('none');
 
+        // Update Chart Suhu
         ctxSuhu.data.labels.push(now); ctxSuhu.data.datasets[0].data.push(liveSIn); ctxSuhu.data.datasets[1].data.push(liveSOut);
         if (ctxSuhu.data.labels.length > 15) { ctxSuhu.data.labels.shift(); ctxSuhu.data.datasets[0].data.shift(); ctxSuhu.data.datasets[1].data.shift(); }
         ctxSuhu.update('none');
+
+        // Update Chart SARIMAX secara Real-time!
+        ctxSarimax.data.labels.push(now);
+        ctxSarimax.data.datasets[0].data.push(liveW);           // Garis Biru: Watt Aktual yang naik turun
+        ctxSarimax.data.datasets[1].data.push(livePredictedW);  // Garis Kuning: Target Prediksi AI yang mendatar
+        if (ctxSarimax.data.labels.length > 15) {
+            ctxSarimax.data.labels.shift();
+            ctxSarimax.data.datasets[0].data.shift();
+            ctxSarimax.data.datasets[1].data.shift();
+        }
+        ctxSarimax.update('none');
+
     }, 10000);
 </script>
 </body>
