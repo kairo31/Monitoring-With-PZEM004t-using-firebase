@@ -192,17 +192,28 @@ def resolve_monthly_target() -> float:
 
 
 def main() -> None:
+<<<<<<< ours
     print("ðŸ”Œ Inisialisasi Firebase untuk retrain RL...")
     initialize_firebase()
 
     print("ðŸ“¥ Menyiapkan dataset RL dari history Firebase...")
+=======
+    print("í´Œ Inisialisasi Firebase untuk retrain RL...")
+    initialize_firebase()
+
+    print("í³¥ Menyiapkan dataset RL dari history Firebase...")
+>>>>>>> theirs
     rows = load_training_rows()
     target = resolve_monthly_target()
 
     env = BudgetEnergyEnv(rows=rows, monthly_target_rp=target)
     model = PPO("MlpPolicy", env, verbose=1)
 
+<<<<<<< ours
     print(f"ðŸ¤– Training PPO dimulai | steps={TOTAL_TIMESTEPS} | samples={len(rows)}")
+=======
+    print(f"í´– Training PPO dimulai | steps={TOTAL_TIMESTEPS} | samples={len(rows)}")
+>>>>>>> theirs
     model.learn(total_timesteps=TOTAL_TIMESTEPS)
 
     MODEL_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
