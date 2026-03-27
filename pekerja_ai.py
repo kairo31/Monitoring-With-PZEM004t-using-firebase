@@ -27,16 +27,11 @@ DEFAULT_MONTHLY_TARGET_RP = float(os.getenv("DEFAULT_MONTHLY_TARGET_RP", "250000
 
 def initialize_firebase() -> None:
     firebase_key_json = os.getenv("FIREBASE_KEY")
+    if not firebase_key_json:
+        raise ValueError("❌ GAGAL: Kunci FIREBASE_KEY tidak ditemukan di environment/secrets!")
 
-    if firebase_key_json:
-        # Mode Internet (Jalur Brankas GitHub)
-        key_dict = json.loads(firebase_key_json)
-        cred = credentials.Certificate(key_dict)
-    else:
-        # Mode Lokal (Jalur Laptop Dellia)
-        if not os.path.exists("firebase_key.json"):
-            raise ValueError("❌ GAGAL: File 'firebase_key.json' tidak ditemukan di folder! Pastikan namanya benar.")
-        cred = credentials.Certificate("firebase_key.json")
+    key_dict = json.loads(firebase_key_json)
+    cred = credentials.Certificate(key_dict)
 
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
@@ -45,7 +40,7 @@ def initialize_firebase() -> None:
 
 def load_rl_model() -> PPO | None:
     if not os.path.exists(RL_MODEL_PATH):
-        print(f" Model RL tidak ditemukan di {RL_MODEL_PATH}. Menggunakan policy hemat berbasis aturan.")
+        print(f"⚠️ Model RL tidak ditemukan di {RL_MODEL_PATH}. Menggunakan policy hemat berbasis aturan.")
         return None
     return PPO.load(RL_MODEL_PATH)
 
@@ -126,16 +121,60 @@ def fetch_budget_context(now: datetime) -> Dict[str, float | int | str]:
     }
 
 
+def fetch_recent_daya_stats() -> Dict[str, float]:
+    history_data = db.reference("history").order_by_key().limit_to_last(120).get() or {}
+    daya_values: list[float] = []
+    for _, value in history_data.items():
+        try:
+            daya = float((value or {}).get("Daya", 0) or 0)
+        except Exception:
+            continue
+        if daya >= 0:
+            daya_values.append(daya)
+
+    if not daya_values:
+        return {"median": 0.0, "p95": 0.0, "mean": 0.0}
+
+    arr = np.array(daya_values, dtype=np.float32)
+    return {
+        "median": float(np.median(arr)),
+        "p95": float(np.percentile(arr, 95)),
+        "mean": float(np.mean(arr)),
+    }
+
+
+def sanitize_predicted_watt(raw_prediction: float, current_watt: float, stats: Dict[str, float]) -> tuple[float, str]:
+    pred = float(raw_prediction)
+    reason = "ok"
+
+    if pred < 0:
+        pred = 0.0
+        reason = "clamped_negative"
+
+    p95 = max(float(stats.get("p95", 0.0)), current_watt, 100.0)
+    dynamic_upper = max(p95 * 1.4, current_watt * 2.5, 300.0)
+    if pred > dynamic_upper:
+        pred = dynamic_upper
+        reason = "clamped_upper"
+
+    delta = abs(pred - current_watt)
+    tolerance = max(150.0, current_watt * 0.8)
+    if delta > tolerance:
+        pred = (0.7 * current_watt) + (0.3 * pred)
+        reason = "smoothed_outlier"
+
+    return float(max(pred, 0.0)), reason
+
 def map_rl_action_to_text(action: int) -> str:
     if action == 1:
-        return " Matikan atau naikkan setpoint AC 1-2°C untuk menekan beban puncak."
+        return "⚠️ Matikan atau naikkan setpoint AC 1-2°C untuk menekan beban puncak."
     if action == 2:
-        return " Tunda pemakaian Magicom bila belum mendesak agar konsumsi turun."
+        return "⚠️ Tunda pemakaian Magicom bila belum mendesak agar konsumsi turun."
     if action == 3:
-        return " Kurangi durasi Waterheater karena ini salah satu beban terbesar."
+        return "⚠️ Kurangi durasi Waterheater karena ini salah satu beban terbesar."
     if action == 4:
-        return " Matikan TV saat tidak ditonton untuk menjaga konsumsi tetap hemat."
-    return " Pola beban saat ini masih aman. Pertahankan kebiasaan hemat hari ini."
+        return "💡 Matikan TV saat tidak ditonton untuk menjaga konsumsi tetap hemat."
+    return "✅ Pola beban saat ini masih aman. Pertahankan kebiasaan hemat hari ini."
 
 
 def build_budget_recommendation(
@@ -164,7 +203,7 @@ def build_budget_recommendation(
     if rl_action is not None:
         base_advice = map_rl_action_to_text(rl_action)
     else:
-        base_advice = " Gunakan perangkat seperlunya dan prioritaskan beban yang benar-benar diperlukan."
+        base_advice = "✅ Gunakan perangkat seperlunya dan prioritaskan beban yang benar-benar diperlukan."
 
     if predicted_daily_cost_rp > daily_target_rp or over_budget_rp > 0:
         saving_goal_today_rp = max(today_cost_rp - daily_target_rp, 0.0)
@@ -182,9 +221,9 @@ def build_budget_recommendation(
         )
 
     saving_badge = (
-        f" Hemat {daily_saving_pct:.1f}% dibanding rata-rata harian biasa"
+        f"🟢 Hemat {daily_saving_pct:.1f}% dibanding rata-rata harian biasa"
         if daily_saving_pct > 0
-        else " Belum ada penghematan signifikan dibanding rata-rata harian"
+        else "🟡 Belum ada penghematan signifikan dibanding rata-rata harian"
     )
 
     return {
@@ -203,7 +242,7 @@ def build_budget_recommendation(
 
 
 initialize_firebase()
-print(" Memuat otak SARIMAX dan RL...")
+print("🧠 Memuat otak SARIMAX dan RL...")
 
 model_path = SARIMAX_MODEL_PATH if os.path.exists(SARIMAX_MODEL_PATH) else LEGACY_SARIMAX_MODEL_PATH
 sarimax_artifact = load_sarimax_artifact(model_path)
@@ -227,7 +266,13 @@ latest_features = {
     "Arus": monitoring_state["Arus"],
     "Tegangan": monitoring_state["Tegangan"],
 }
-prediksi_watt = forecast_next_step(sarimax_artifact, latest_features)
+raw_prediksi_watt = forecast_next_step(sarimax_artifact, latest_features)
+recent_daya_stats = fetch_recent_daya_stats()
+prediksi_watt, prediksi_adjustment = sanitize_predicted_watt(
+    raw_prediction=raw_prediksi_watt,
+    current_watt=monitoring_state["Daya"],
+    stats=recent_daya_stats,
+)
 
 rl_action = None
 if model_rl is not None:
@@ -281,15 +326,17 @@ recommendation = build_budget_recommendation(
 )
 
 print(
-    f" Daya Aktual: {monitoring_state['Daya']} W | Prediksi SARIMAX: {prediksi_watt:.2f} W | "
-    f"Target Bulanan: Rp {float(budget_context['monthly_target_rp']):,.0f}"
+    f"📊 Daya Aktual: {monitoring_state['Daya']} W | Prediksi SARIMAX (raw): {raw_prediksi_watt:.2f} W | "
+    f"Prediksi dipakai: {prediksi_watt:.2f} W | Target Bulanan: Rp {float(budget_context['monthly_target_rp']):,.0f}"
 )
-print(f" Rekomendasi Hemat: {recommendation['combined_advice']}")
-print(f" Indikator hemat hari ini: {recommendation['saving_badge']}")
+print(f"🗣️ Rekomendasi Hemat: {recommendation['combined_advice']}")
+print(f"💰 Indikator hemat hari ini: {recommendation['saving_badge']}")
 
 db.reference("Hasil_AI").set(
     {
         "prediksi_daya_selanjutnya": round(float(prediksi_watt), 2),
+        "prediksi_daya_selanjutnya_raw": round(float(raw_prediksi_watt), 2),
+        "prediksi_adjustment": prediksi_adjustment,
         "rekomendasi_rl": recommendation["combined_advice"],
         "rekomendasi_ppo": recommendation["ppo_advice"],
         "rekomendasi_budget": recommendation["budget_advice"],
