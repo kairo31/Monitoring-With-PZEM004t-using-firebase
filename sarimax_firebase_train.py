@@ -28,19 +28,13 @@ USE_EXOG = os.getenv("SARIMAX_USE_EXOG", "true").lower() == "true"
 AUTO_DROP_TEGANGAN_IF_SPARSE = True
 TEGANGAN_NAN_THRESHOLD = 0.5
 
+
 def initialize_firebase() -> None:
     firebase_key_json = os.getenv("FIREBASE_KEY")
+    if not firebase_key_json:
+        raise ValueError("FIREBASE_KEY tidak ditemukan di environment.")
 
-    if firebase_key_json:
-        # Mode Internet (Jalur Brankas GitHub)
-        key_dict = json.loads(firebase_key_json)
-        cred = credentials.Certificate(key_dict)
-    else:
-        # Mode Lokal (Jalur Laptop)
-        if not os.path.exists("firebase_key.json"):
-            raise ValueError(" GAGAL: File 'firebase_key.json' tidak ditemukan di folder!")
-        cred = credentials.Certificate("firebase_key.json")
-
+    cred = credentials.Certificate(json.loads(firebase_key_json))
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
 
