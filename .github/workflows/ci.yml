@@ -1,3 +1,4 @@
+
 name: CI
 
 on:
@@ -29,6 +30,7 @@ jobs:
           
     - name: Download Model AI dari Google Drive
         run: |
+          mkdir -p model_ai
           python -m pip install gdown
           gdown "https://drive.google.com/file/d/1XLPfnCjT5EGf-zj3p_6q3XYDBJaCPgVy/view?usp=drive_link" -O "model_ai/model_sarimax_kairo (1).pkl"
           gdown "https://drive.google.com/file/d/1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY/view?usp=drive_link" -O "model_ai/model_rl_kairo (1).zip"
