@@ -26,3 +26,8 @@ jobs:
       - name: Compile check
         run: |
           python -m py_compile pekerja_ai.py rekap_harian.py sarimax_utils.py sarimax_firebase_train.py rl_retrain_budget.py model_ai/pekerja_ai.py
+          
+     - name: Download Model Raksasa dari Google Drive
+        run: |
+          python -m pip install gdown
+          gdown "https://drive.google.com/drive/folders/11Kj0DjGCFhSFvgtQXV4Od4bv0NxmwuXp?usp=drive_link" -O model_ai/sarimax_bundle.pkl
