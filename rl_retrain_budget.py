@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 import pytz
 from firebase_admin import credentials, db
-from stable_baselines3 import PPO
 from gymnasium import Env, spaces
+from stable_baselines3 import PPO
 
 DB_URL = os.getenv(
     "FIREBASE_DB_URL",
@@ -36,7 +36,7 @@ class TrainRow:
 
 
 class BudgetEnergyEnv(Env):
-    """RL env dengan state yang memuat prediksi_watt, target_bulanan_rp, dan gap_to_target."""
+    """Budget-aware RL env with predicted watt and budget gap in observation."""
 
     metadata = {"render_modes": []}
 
@@ -45,17 +45,13 @@ class BudgetEnergyEnv(Env):
         self.rows = rows
         self.monthly_target_rp = monthly_target_rp
         self.i = 0
-        self.projected_month_cost = monthly_target_rp
 
-        # action: 0 aman, 1 AC, 2 Magicom, 3 Waterheater, 4 TV
         self.action_space = spaces.Discrete(5)
-        # state: [daya, suhu, ac, magicom, wh, tv, jam, prediksi_watt, target_bulanan_rp, gap_to_target]
         high = np.array([5000, 60, 1, 1, 1, 1, 23, 5000, 2_000_000, 2_000_000], dtype=np.float32)
         low = np.array([0, 10, 0, 0, 0, 0, 0, 0, 10_000, -2_000_000], dtype=np.float32)
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
     def _device_flags(self, daya: float) -> tuple[int, int, int, int]:
-        # proxy sederhana untuk simulasi status device
         ac = 1 if daya > 350 else 0
         wh = 1 if daya > 600 else 0
         magicom = 1 if 120 < daya < 450 else 0
@@ -68,9 +64,7 @@ class BudgetEnergyEnv(Env):
         prediksi_watt = max(prediksi_watt, 0.0)
 
         est_daily_cost = (prediksi_watt / 1000.0) * 24 * TARIF_PER_KWH
-        days_in_month = 30
-        self.projected_month_cost = est_daily_cost * days_in_month
-        gap_to_target = self.projected_month_cost - self.monthly_target_rp
+        gap_to_target = (est_daily_cost * 30) - self.monthly_target_rp
 
         return np.array(
             [
@@ -102,12 +96,9 @@ class BudgetEnergyEnv(Env):
         reduction_factor = {0: 0.00, 1: 0.12, 2: 0.07, 3: 0.18, 4: 0.05}[int(action)]
         expected_after_action = prediksi_watt * (1.0 - reduction_factor)
         est_daily_cost_after = (expected_after_action / 1000.0) * 24 * TARIF_PER_KWH
-        est_month_after = est_daily_cost_after * 30
+        gap_after = (est_daily_cost_after * 30) - self.monthly_target_rp
 
-        # reward: kurangi gap, tapi penalti aksi agresif saat tidak dibutuhkan
-        gap_after = est_month_after - self.monthly_target_rp
         reward = -abs(gap_after) / max(self.monthly_target_rp, 1.0)
-
         if gap_to_target <= 0 and action != 0:
             reward -= 0.2
         if gap_to_target > 0 and action == 0:
@@ -146,7 +137,7 @@ def load_training_rows() -> list[TrainRow]:
     if missing:
         raise ValueError(f"Kolom wajib untuk retrain RL tidak lengkap: {missing}")
 
-    for col in ["Daya", "Suhu", "Arus", "Tegangan", "waktu"]:
+    for col in required:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df["waktu"] = pd.to_datetime(df["waktu"], unit="ms", errors="coerce")
@@ -164,6 +155,7 @@ def load_training_rows() -> list[TrainRow]:
             waktu = waktu.tz_localize("UTC").tz_convert(tz)
         else:
             waktu = waktu.tz_convert(tz)
+
         rows.append(
             TrainRow(
                 daya=float(max(row["Daya"], 0.0)),
@@ -191,37 +183,22 @@ def resolve_monthly_target() -> float:
     return max(target, 10_000.0)
 
 
-def main() -> None:
-<<<<<<< ours
-    print("ðŸ”Œ Inisialisasi Firebase untuk retrain RL...")
+if __name__ == "__main__":
+    print("Initialize Firebase for RL retraining...")
     initialize_firebase()
 
-    print("ðŸ“¥ Menyiapkan dataset RL dari history Firebase...")
-=======
-    print("í´Œ Inisialisasi Firebase untuk retrain RL...")
-    initialize_firebase()
-
-    print("í³¥ Menyiapkan dataset RL dari history Firebase...")
->>>>>>> theirs
+    print("Prepare RL dataset from Firebase history...")
     rows = load_training_rows()
     target = resolve_monthly_target()
 
     env = BudgetEnergyEnv(rows=rows, monthly_target_rp=target)
     model = PPO("MlpPolicy", env, verbose=1)
 
-<<<<<<< ours
-    print(f"ðŸ¤– Training PPO dimulai | steps={TOTAL_TIMESTEPS} | samples={len(rows)}")
-=======
-    print(f"í´– Training PPO dimulai | steps={TOTAL_TIMESTEPS} | samples={len(rows)}")
->>>>>>> theirs
+    print(f"Start PPO training | steps={TOTAL_TIMESTEPS} | samples={len(rows)}")
     model.learn(total_timesteps=TOTAL_TIMESTEPS)
 
     MODEL_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     model.save(str(MODEL_OUTPUT_PATH))
 
-    print(f"âœ… Model RL baru tersimpan di: {MODEL_OUTPUT_PATH}")
-    print("State model sudah memuat: prediksi_watt, target_bulanan_rp, gap_to_target.")
-
-
-if __name__ == "__main__":
-    main()
+    print(f"Model RL saved at: {MODEL_OUTPUT_PATH}")
+    print("Observation contains: prediksi_watt, target_bulanan_rp, gap_to_target.")
