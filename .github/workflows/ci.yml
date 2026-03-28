@@ -28,9 +28,11 @@ jobs:
         run: |
           python -m py_compile pekerja_ai.py rekap_harian.py sarimax_utils.py sarimax_firebase_train.py rl_retrain_budget.py model_ai/pekerja_ai.py
           
-    - name: Download Model AI dari Google Drive
+      - name: Download Model AI dari Google Drive
         run: |
           mkdir -p model_ai
           python -m pip install gdown
-          gdown "https://drive.google.com/file/d/1XLPfnCjT5EGf-zj3p_6q3XYDBJaCPgVy/view?usp=drive_link" -O "model_ai/model_sarimax_kairo (1).pkl"
-          gdown "https://drive.google.com/file/d/1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY/view?usp=drive_link" -O "model_ai/model_rl_kairo (1).zip"
+          gdown --id "1XLPfnCjT5EGf-zj3p_6q3XYDBJaCPgVy" -O "model_ai/model_sarimax_kairo (1).pkl"
+          gdown --id "1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY" -O "model_ai/model_rl_kairo (1).zip"
+          echo " === HASIL DOWNLOAD ==="
+          ls -la model_ai/
