@@ -1,4 +1,4 @@
-name: Robot-Rekap-Kairo-dan-AI
+name: Robot-Rekap
 
 on:
   workflow_dispatch:
@@ -26,15 +26,15 @@ jobs:
         run: |
           mkdir -p model_ai
           python -m pip install gdown
-          gdown --id "1H9tTCCeQVyWB3u2NXOYtRf_X1SZUJu5" -O "model_ai/model_sarimax_kairo (1).pkl"
+          gdown --id "1_H9tTCCeQVyWB3u2NXOYtRf_X1SZUJu5" -O "model_ai/model_sarimax_kairo (1).pkl"
           gdown --id "1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY" -O "model_ai/model_rl_kairo (1).zip"
 
       - name: Run Script Rekap Harian
         env:
-          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }} # Ini jembatan kuncinya!
+          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
         run: python rekap_harian.py
 
       - name: Jalankan Mandor AI
         env:
-          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }} # Ini juga jembatan kuncinya!
+          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }} 
         run: python pekerja_ai.py
