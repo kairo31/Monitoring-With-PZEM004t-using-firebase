@@ -32,7 +32,7 @@ jobs:
         run: |
           mkdir -p model_ai
           python -m pip install gdown
-          gdown --id "1_H9tTCCeQVyWB3u2NXOYtRf_X1SZUJu5" -O "model_ai/model_sarimax_kairo (1).pkl"
+          gdown --id "1InRo2Z7goQsi5m_OExDKOOUPdn4qXh66" -O "model_ai/model_sarimax_kairo (1).pkl"
           gdown --id "1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY" -O "model_ai/model_rl_kairo (1).zip"
           echo " === HASIL DOWNLOAD ==="
           ls -la model_ai/
