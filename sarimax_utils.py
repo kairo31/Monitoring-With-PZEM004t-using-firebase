@@ -6,13 +6,11 @@ from typing import Any, Dict
 import joblib
 import pandas as pd
 
-
 LEGACY_MODEL_TYPE = "pmdarima"
 STATSMODELS_MODEL_TYPE = "statsmodels_sarimax"
 
 
 def load_sarimax_artifact(model_path: str | Path) -> Dict[str, Any]:
-    """Load either a new SARIMAX bundle or a legacy pickled model."""
     model_path = Path(model_path)
     if not model_path.exists():
         raise FileNotFoundError(f"Model file tidak ditemukan: {model_path}")
@@ -33,8 +31,8 @@ def load_sarimax_artifact(model_path: str | Path) -> Dict[str, Any]:
 def forecast_next_step(
     artifact: Dict[str, Any],
     latest_features: Dict[str, float | int],
+    current_watt: float = None,
 ) -> float:
-    """Forecast one step ahead from a loaded model artifact."""
     model_type = artifact["model_type"]
     uses_exog = artifact.get("uses_exog", False)
     exog_columns = artifact.get("exog_columns", [])
@@ -45,6 +43,16 @@ def forecast_next_step(
             [[latest_features.get(column, 0.0) for column in exog_columns]],
             columns=exog_columns,
         )
+
+    if current_watt is not None:
+        current_y = pd.Series([current_watt])
+        try:
+            if model_type == STATSMODELS_MODEL_TYPE:
+                artifact["model"] = artifact["model"].apply(current_y, exog=future_exog)
+            elif model_type == LEGACY_MODEL_TYPE:
+                artifact["model"].update(current_y, X=future_exog)
+        except Exception as e:
+            print(f"⚠️ Gagal menyuntikkan data aktual ke SARIMAX: {e}")
 
     if model_type == STATSMODELS_MODEL_TYPE:
         forecast = artifact["model"].get_forecast(steps=1, exog=future_exog)
