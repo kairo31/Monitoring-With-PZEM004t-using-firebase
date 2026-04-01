@@ -266,7 +266,7 @@ latest_features = {
     "Arus": monitoring_state["Arus"],
     "Tegangan": monitoring_state["Tegangan"],
 }
-raw_prediksi_watt = forecast_next_step(sarimax_artifact, latest_features)
+raw_prediksi_watt = forecast_next_step(sarimax_artifact, latest_features, current_watt=monitoring_state["Daya"])
 recent_daya_stats = fetch_recent_daya_stats()
 prediksi_watt, prediksi_adjustment = sanitize_predicted_watt(
     raw_prediction=raw_prediksi_watt,
