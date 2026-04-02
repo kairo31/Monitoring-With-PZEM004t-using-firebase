@@ -1,259 +1,376 @@
-from __future__ import annotations
-
 import calendar
 import json
 import os
-from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
+from typing import Any, Dict
 
 import firebase_admin
 import numpy as np
-import pandas as pd
 import pytz
 from firebase_admin import credentials, db
-from gymnasium import Env, spaces
 from stable_baselines3 import PPO
+
+from sarimax_utils import forecast_next_step, load_sarimax_artifact
+
+print("🤖 Pekerja AI successful...")
 
 DB_URL = os.getenv(
     "FIREBASE_DB_URL",
     "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app",
 )
-HISTORY_NODE = os.getenv("FIREBASE_HISTORY_NODE", "history")
-MODEL_OUTPUT_PATH = Path(os.getenv("RL_MODEL_OUTPUT", "model_ai/model_rl_budget.zip"))
-DEFAULT_MONTHLY_TARGET_RP = float(os.getenv("DEFAULT_MONTHLY_TARGET_RP", "250000"))
+SARIMAX_MODEL_PATH = os.getenv("SARIMAX_MODEL_PATH", "model_ai/sarimax_bundle.pkl")
+RL_MODEL_PATH = os.getenv("RL_MODEL_PATH", "model_ai/model_rl_budget.zip")
+LEGACY_SARIMAX_MODEL_PATH = "model_ai/model_sarimax_kairo (1).pkl"
 TARIF_PER_KWH = float(os.getenv("TARIF_PER_KWH", "1352.0"))
-TOTAL_TIMESTEPS = int(os.getenv("RL_TOTAL_TIMESTEPS", "40000"))
-
-
-@dataclass
-class TrainRow:
-    daya: float
-    suhu: float
-    arus: float
-    tegangan: float
-    jam: float
-    day_of_week: float
-    is_weekend: float
-    day_progress: float
-    days_remaining: float
-
-
-class BudgetEnergyEnv(Env):
-    """Budget-aware RL env with predicted watt and budget gap in observation."""
-
-    metadata = {"render_modes": []}
-
-    def __init__(self, rows: list[TrainRow], monthly_target_rp: float):
-        super().__init__()
-        self.rows = rows
-        self.monthly_target_rp = monthly_target_rp
-        self.i = 0
-        self.prev_action = 0
-
-        self.action_space = spaces.Discrete(5)
-        high = np.array(
-            [
-                5000,  # daya
-                60,  # suhu
-                1, 1, 1, 1,  # device flags
-                23,  # jam
-                6,  # day_of_week
-                1,  # is_weekend
-                1,  # is_peak_hour
-                1,  # day_progress
-                31,  # days_remaining
-                5000,  # prediksi_watt
-                2_000_000,  # monthly target
-                2_000_000,  # gap to target
-            ],
-            dtype=np.float32,
-        )
-        low = np.array(
-            [
-                0,
-                10,
-                0, 0, 0, 0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                10_000,
-                -2_000_000,
-            ],
-            dtype=np.float32,
-        )
-        self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
-
-    def _device_flags(self, daya: float) -> tuple[int, int, int, int]:
-        ac = 1 if daya > 350 else 0
-        wh = 1 if daya > 600 else 0
-        magicom = 1 if 120 < daya < 450 else 0
-        tv = 1 if 40 < daya < 220 else 0
-        return ac, magicom, wh, tv
-
-    def _build_state(self, row: TrainRow) -> np.ndarray:
-        ac, magicom, wh, tv = self._device_flags(row.daya)
-        prediksi_watt = float((0.6 * row.daya) + (0.25 * row.arus * row.tegangan) + (2.0 * row.suhu))
-        prediksi_watt = max(prediksi_watt, 0.0)
-        is_peak_hour = 1.0 if (17 <= row.jam <= 22) else 0.0
-
-        est_daily_cost = (prediksi_watt / 1000.0) * 24 * TARIF_PER_KWH
-        gap_to_target = (est_daily_cost * 30) - self.monthly_target_rp
-
-        return np.array(
-            [
-                row.daya,
-                row.suhu,
-                ac,
-                magicom,
-                wh,
-                tv,
-                row.jam,
-                row.day_of_week,
-                row.is_weekend,
-                is_peak_hour,
-                row.day_progress,
-                row.days_remaining,
-                prediksi_watt,
-                self.monthly_target_rp,
-                gap_to_target,
-            ],
-            dtype=np.float32,
-        )
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        self.i = 0
-        self.prev_action = 0
-        return self._build_state(self.rows[self.i]), {}
-
-    def step(self, action: int):
-        row = self.rows[self.i]
-        state = self._build_state(row)
-        prediksi_watt = float(state[12])
-        gap_to_target = float(state[14])
-
-        reduction_factor = {0: 0.00, 1: 0.12, 2: 0.07, 3: 0.18, 4: 0.05}[int(action)]
-        expected_after_action = prediksi_watt * (1.0 - reduction_factor)
-        est_daily_cost_after = (expected_after_action / 1000.0) * 24 * TARIF_PER_KWH
-        gap_after = (est_daily_cost_after * 30) - self.monthly_target_rp
-
-        reward = -abs(gap_after) / max(self.monthly_target_rp, 1.0)
-        if gap_to_target <= 0 and action != 0:
-            reward -= 0.2
-        if gap_to_target > 0 and action == 0:
-            reward -= 0.2
-        if int(action) != int(self.prev_action):
-            reward -= 0.03
-        if row.suhu >= 30 and int(action) == 1:
-            reward -= 0.08
-        if row.daya < 120 and int(action) in {1, 3}:
-            reward -= 0.05
-
-        self.i += 1
-        self.prev_action = int(action)
-        terminated = self.i >= len(self.rows) - 1
-        next_state = self._build_state(self.rows[self.i if not terminated else -1])
-
-        info = {
-            "prediksi_watt": prediksi_watt,
-            "gap_to_target": gap_to_target,
-            "gap_after": gap_after,
-        }
-        return next_state, float(reward), terminated, False, info
+DEFAULT_MONTHLY_TARGET_RP = float(os.getenv("DEFAULT_MONTHLY_TARGET_RP", "250000"))
 
 
 def initialize_firebase() -> None:
     firebase_key_json = os.getenv("FIREBASE_KEY")
     if not firebase_key_json:
-        raise ValueError("FIREBASE_KEY tidak ditemukan di environment.")
+        raise ValueError("❌ GAGAL: Kunci FIREBASE_KEY tidak ditemukan di environment/secrets!")
 
-    cred = credentials.Certificate(json.loads(firebase_key_json))
+    key_dict = json.loads(firebase_key_json)
+    cred = credentials.Certificate(key_dict)
+
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
+    print("✅ Berhasil login ke Firebase melalui jalur aman!")
 
 
-def load_training_rows() -> list[TrainRow]:
-    raw_data = db.reference(HISTORY_NODE).get()
-    if not raw_data:
-        raise ValueError(f"Node '{HISTORY_NODE}' kosong atau tidak tersedia.")
+def load_rl_model() -> PPO | None:
+    if not os.path.exists(RL_MODEL_PATH):
+        print(f"⚠️ Model RL tidak ditemukan di {RL_MODEL_PATH}. Menggunakan policy hemat berbasis aturan.")
+        return None
+    return PPO.load(RL_MODEL_PATH)
 
-    df = pd.DataFrame.from_dict(raw_data, orient="index")
-    required = ["Daya", "Suhu", "Arus", "Tegangan", "waktu"]
-    missing = [c for c in required if c not in df.columns]
-    if missing:
-        raise ValueError(f"Kolom wajib untuk retrain RL tidak lengkap: {missing}")
 
-    for col in required:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+def fetch_latest_monitoring_state() -> Dict[str, float]:
+    hist_data = db.reference("history").order_by_key().limit_to_last(1).get()
+    state = {
+        "Daya": 0.0,
+        "Suhu": 25.0,
+        "Arus": 0.0,
+        "Tegangan": 0.0,
+    }
+    if hist_data:
+        for _, val in hist_data.items():
+            state["Daya"] = float(val.get("Daya", 0) or 0)
+            state["Suhu"] = float(val.get("Suhu", 25.0) or 25.0)
+            state["Arus"] = float(val.get("Arus", 0) or 0)
+            state["Tegangan"] = float(val.get("Tegangan", 0) or 0)
+    return state
 
-    df["waktu"] = pd.to_datetime(df["waktu"], unit="ms", errors="coerce")
-    df = df.dropna(subset=["waktu"]).sort_values("waktu")
-    df = df.dropna(subset=["Daya", "Suhu", "Arus", "Tegangan"])
 
-    if df.empty:
-        raise ValueError("Data kosong setelah cleaning untuk retrain RL.")
+def fetch_device_state() -> Dict[str, int]:
+    log_data = db.reference("log_konfirmasi").order_by_key().limit_to_last(1).get()
+    device_state = {"AC": 0, "Magicom": 0, "Waterheater": 0, "TV": 0, "Laptop": 0}
+    if log_data:
+        for _, val in log_data.items():
+            device_state = {
+                "AC": 1 if val.get("AC") else 0,
+                "Magicom": 1 if val.get("Magicom") else 0,
+                "Waterheater": 1 if val.get("Waterheater") else 0,
+                "TV": 1 if val.get("TV") else 0,
+                "Laptop": 1 if val.get("Laptop") else 0,
+            }
+    return device_state
 
-    rows: list[TrainRow] = []
-    tz = pytz.timezone("Asia/Jakarta")
-    for _, row in df.tail(5000).iterrows():
-        waktu = row["waktu"]
-        if waktu.tzinfo is None:
-            waktu = waktu.tz_localize("UTC").tz_convert(tz)
-        else:
-            waktu = waktu.tz_convert(tz)
 
-        rows.append(
-            TrainRow(
-                daya=float(max(row["Daya"], 0.0)),
-                suhu=float(np.clip(row["Suhu"], 10.0, 60.0)),
-                arus=float(max(row["Arus"], 0.0)),
-                tegangan=float(max(row["Tegangan"], 0.0)),
-                jam=float(waktu.hour),
-                day_of_week=float(waktu.weekday()),
-                is_weekend=float(1 if waktu.weekday() >= 5 else 0),
-                day_progress=float(waktu.day / max(calendar.monthrange(waktu.year, waktu.month)[1], 1)),
-                days_remaining=float(max(calendar.monthrange(waktu.year, waktu.month)[1] - waktu.day, 0)),
-            )
+def fetch_budget_context(now: datetime) -> Dict[str, float | int | str]:
+    prefs = db.reference("user_preferences").get() or {}
+    dashboard = db.reference("dashboard_info").get() or {}
+    history = db.reference("rekap_harian/history").order_by_key().limit_to_last(30).get() or {}
+
+    monthly_target_rp = float(prefs.get("monthly_budget_rp", DEFAULT_MONTHLY_TARGET_RP) or DEFAULT_MONTHLY_TARGET_RP)
+    today_cost_rp = float(dashboard.get("biaya_hari_ini", 0) or 0)
+    today_kwh = float(dashboard.get("kwh_hari_ini", 0) or 0)
+    days_in_month = calendar.monthrange(now.year, now.month)[1]
+    day_of_month = now.day
+    daily_target_rp = monthly_target_rp / days_in_month if days_in_month else monthly_target_rp
+
+    historical_costs = []
+    today_key = now.strftime("%Y-%m-%d")
+    for key, value in history.items():
+        if key == today_key:
+            continue
+        if isinstance(value, dict):
+            cost = float(value.get("biaya_rp", 0) or 0)
+            if cost > 0:
+                historical_costs.append(cost)
+
+    average_daily_cost_rp = sum(historical_costs) / len(historical_costs) if historical_costs else today_cost_rp
+    projected_monthly_cost_rp = average_daily_cost_rp * days_in_month
+    current_month_run_rate_rp = (today_cost_rp / max(day_of_month, 1)) * days_in_month if today_cost_rp > 0 else projected_monthly_cost_rp
+    reference_daily_cost_rp = average_daily_cost_rp if average_daily_cost_rp > 0 else daily_target_rp
+    daily_saving_rp = max(reference_daily_cost_rp - today_cost_rp, 0.0)
+    daily_saving_pct = (daily_saving_rp / reference_daily_cost_rp * 100) if reference_daily_cost_rp > 0 else 0.0
+
+    return {
+        "monthly_target_rp": monthly_target_rp,
+        "daily_target_rp": daily_target_rp,
+        "today_cost_rp": today_cost_rp,
+        "today_kwh": today_kwh,
+        "average_daily_cost_rp": average_daily_cost_rp,
+        "projected_monthly_cost_rp": projected_monthly_cost_rp,
+        "current_month_run_rate_rp": current_month_run_rate_rp,
+        "days_in_month": days_in_month,
+        "day_of_month": day_of_month,
+        "daily_saving_rp": daily_saving_rp,
+        "daily_saving_pct": daily_saving_pct,
+    }
+
+
+def fetch_recent_daya_stats() -> Dict[str, float]:
+    history_data = db.reference("history").order_by_key().limit_to_last(120).get() or {}
+    daya_values: list[float] = []
+    for _, value in history_data.items():
+        try:
+            daya = float((value or {}).get("Daya", 0) or 0)
+        except Exception:
+            continue
+        if daya >= 0:
+            daya_values.append(daya)
+
+    if not daya_values:
+        return {"median": 0.0, "p95": 0.0, "mean": 0.0}
+
+    arr = np.array(daya_values, dtype=np.float32)
+    return {
+        "median": float(np.median(arr)),
+        "p95": float(np.percentile(arr, 95)),
+        "mean": float(np.mean(arr)),
+    }
+
+
+def sanitize_predicted_watt(raw_prediction: float, current_watt: float, stats: Dict[str, float]) -> tuple[float, str]:
+    pred = float(raw_prediction)
+    reason = "ok"
+
+    if pred < 0:
+        pred = 0.0
+        reason = "clamped_negative"
+
+    p95 = max(float(stats.get("p95", 0.0)), current_watt, 100.0)
+    dynamic_upper = max(p95 * 1.4, current_watt * 2.5, 300.0)
+    if pred > dynamic_upper:
+        pred = dynamic_upper
+        reason = "clamped_upper"
+
+    delta = abs(pred - current_watt)
+    tolerance = max(150.0, current_watt * 0.8)
+    if delta > tolerance:
+        pred = (0.7 * current_watt) + (0.3 * pred)
+        reason = "smoothed_outlier"
+
+    return float(max(pred, 0.0)), reason
+
+def map_rl_action_to_text(action: int) -> str:
+    if action == 1:
+        return "⚠️ Matikan atau naikkan setpoint AC 1-2°C untuk menekan beban puncak."
+    if action == 2:
+        return "⚠️ Tunda pemakaian Magicom bila belum mendesak agar konsumsi turun."
+    if action == 3:
+        return "⚠️ Kurangi durasi Waterheater karena ini salah satu beban terbesar."
+    if action == 4:
+        return "💡 Matikan TV saat tidak ditonton untuk menjaga konsumsi tetap hemat."
+    return "✅ Pola beban saat ini masih aman. Pertahankan kebiasaan hemat hari ini."
+
+
+def build_budget_recommendation(
+    predicted_watt: float,
+    device_state: Dict[str, int],
+    budget_context: Dict[str, float | int | str],
+    rl_action: int | None,
+) -> Dict[str, Any]:
+    daily_target_rp = float(budget_context["daily_target_rp"])
+    monthly_target_rp = float(budget_context["monthly_target_rp"])
+    today_cost_rp = float(budget_context["today_cost_rp"])
+    projected_monthly_cost_rp = float(budget_context["projected_monthly_cost_rp"])
+    current_month_run_rate_rp = float(budget_context["current_month_run_rate_rp"])
+    average_daily_cost_rp = float(budget_context["average_daily_cost_rp"])
+    daily_saving_pct = float(budget_context["daily_saving_pct"])
+    daily_saving_rp = float(budget_context["daily_saving_rp"])
+
+    predicted_daily_cost_rp = (max(predicted_watt, 0.0) / 1000.0) * 24 * TARIF_PER_KWH
+    projected_reference_rp = max(projected_monthly_cost_rp, current_month_run_rate_rp)
+    over_budget_rp = max(projected_reference_rp - monthly_target_rp, 0.0)
+    target_status = "on_track" if over_budget_rp <= 0 else "over_budget"
+
+    active_devices = [name for name, status in device_state.items() if status == 1]
+    top_device_hint = active_devices[0] if active_devices else "beban non-prioritas"
+
+    if rl_action is not None:
+        base_advice = map_rl_action_to_text(rl_action)
+    else:
+        base_advice = "✅ Gunakan perangkat seperlunya dan prioritaskan beban yang benar-benar diperlukan."
+
+    if predicted_daily_cost_rp > daily_target_rp or over_budget_rp > 0:
+        saving_goal_today_rp = max(today_cost_rp - daily_target_rp, 0.0)
+        urgency = "tinggi" if predicted_daily_cost_rp > (daily_target_rp * 1.2) else "sedang"
+        budget_advice = (
+            f"Prediksi SARIMAX menunjukkan potensi biaya harian sekitar Rp {predicted_daily_cost_rp:,.0f}. "
+            f"Agar target bulanan Rp {monthly_target_rp:,.0f} tercapai, usahakan hemat sekitar Rp {saving_goal_today_rp:,.0f} hari ini "
+            f"dengan mengurangi pemakaian {top_device_hint}."
+        )
+    else:
+        urgency = "rendah"
+        budget_advice = (
+            f"Prediksi SARIMAX masih berada dalam batas aman target harian Rp {daily_target_rp:,.0f}. "
+            "Pertahankan pola pemakaian saat ini agar target bulanan tetap tercapai."
         )
 
-    if len(rows) < 200:
-        raise ValueError(f"Data untuk retrain RL terlalu sedikit ({len(rows)}), butuh >= 200 sampel.")
+    saving_badge = (
+        f"🟢 Hemat {daily_saving_pct:.1f}% dibanding rata-rata harian biasa"
+        if daily_saving_pct > 0
+        else "🟡 Belum ada penghematan signifikan dibanding rata-rata harian"
+    )
 
-    return rows
+    return {
+        "target_status": target_status,
+        "urgency": urgency,
+        "ppo_advice": base_advice,
+        "budget_advice": budget_advice,
+        "combined_advice": f"{base_advice} {budget_advice}",
+        "predicted_daily_cost_rp": round(predicted_daily_cost_rp, 2),
+        "over_budget_rp": round(over_budget_rp, 2),
+        "saving_badge": saving_badge,
+        "daily_saving_pct": round(daily_saving_pct, 2),
+        "daily_saving_rp": round(daily_saving_rp, 2),
+        "average_daily_cost_rp": round(average_daily_cost_rp, 2),
+    }
 
 
-def resolve_monthly_target() -> float:
-    prefs = db.reference("user_preferences").get() or {}
-    target = float(prefs.get("monthly_budget_rp", DEFAULT_MONTHLY_TARGET_RP) or DEFAULT_MONTHLY_TARGET_RP)
+initialize_firebase()
+print("🧠 Memuat otak SARIMAX dan RL...")
 
-    now = datetime.now(pytz.timezone("Asia/Jakarta"))
-    days = calendar.monthrange(now.year, now.month)[1]
-    if days <= 0:
-        return target
-    return max(target, 10_000.0)
+model_path = SARIMAX_MODEL_PATH if os.path.exists(SARIMAX_MODEL_PATH) else LEGACY_SARIMAX_MODEL_PATH
+sarimax_artifact = load_sarimax_artifact(model_path)
+model_rl = load_rl_model()
 
+tz = pytz.timezone("Asia/Jakarta")
+now = datetime.now(tz)
+jam_skrg = now.hour
 
-if __name__ == "__main__":
-    print("Initialize Firebase for RL retraining...")
-    initialize_firebase()
+monitoring_state = fetch_latest_monitoring_state()
+device_state = fetch_device_state()
+budget_context = fetch_budget_context(now)
 
-    print("Prepare RL dataset from Firebase history...")
-    rows = load_training_rows()
-    target = resolve_monthly_target()
+latest_features = {
+    "Suhu": monitoring_state["Suhu"],
+    "AC": device_state["AC"],
+    "Magicom": device_state["Magicom"],
+    "Waterheater": device_state["Waterheater"],
+    "Laptop": device_state["Laptop"],
+    "TV": device_state["TV"],
+    "Arus": monitoring_state["Arus"],
+    "Tegangan": monitoring_state["Tegangan"],
+}
 
-    env = BudgetEnergyEnv(rows=rows, monthly_target_rp=target)
-    model = PPO("MlpPolicy", env, verbose=1)
+raw_prediksi_watt = forecast_next_step(sarimax_artifact, latest_features, current_watt=monitoring_state["Daya"])
+recent_daya_stats = fetch_recent_daya_stats()
+prediksi_watt, prediksi_adjustment = sanitize_predicted_watt(
+    raw_prediction=raw_prediksi_watt,
+    current_watt=monitoring_state["Daya"],
+    stats=recent_daya_stats,
+)
 
-    print(f"Start PPO training | steps={TOTAL_TIMESTEPS} | samples={len(rows)}")
-    model.learn(total_timesteps=TOTAL_TIMESTEPS)
+rl_action = None
+if model_rl is not None:
+    gap_to_target = float(budget_context["current_month_run_rate_rp"]) - float(budget_context["monthly_target_rp"])
+    is_peak_hour = 1.0 if 17 <= jam_skrg <= 22 else 0.0
+    day_of_week = float(now.weekday())
+    is_weekend = float(1 if now.weekday() >= 5 else 0)
+    day_progress = float(now.day / max(int(budget_context["days_in_month"]), 1))
+    days_remaining = float(max(int(budget_context["days_in_month"]) - now.day, 0))
+    
+    state_v2 = np.array(
+        [
+            monitoring_state["Daya"],
+            monitoring_state["Suhu"],
+            device_state["AC"],
+            device_state["Magicom"],
+            device_state["Waterheater"],
+            device_state["TV"],
+            jam_skrg,
+            day_of_week,
+            is_weekend,
+            is_peak_hour,
+            day_progress,
+            days_remaining,
+            prediksi_watt,
+            float(budget_context["monthly_target_rp"]),
+            gap_to_target,
+        ],
+        dtype=np.float32,
+    )
+    
+    state_v1 = np.array(
+        [
+            monitoring_state["Daya"],
+            monitoring_state["Suhu"],
+            device_state["AC"],
+            device_state["Magicom"],
+            device_state["Waterheater"],
+            device_state["TV"],
+            jam_skrg,
+        ],
+        dtype=np.float32,
+    )
 
-    MODEL_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    model.save(str(MODEL_OUTPUT_PATH))
+    try:
+        expected_obs_dim = int(model_rl.observation_space.shape[0])
+    except Exception:
+        expected_obs_dim = len(state_v2)
 
-    print(f"Model RL saved at: {MODEL_OUTPUT_PATH}")
-    print("Observation contains: prediksi_watt, target_bulanan_rp, gap_to_target.")
+    try:
+        state = state_v2 if expected_obs_dim >= len(state_v2) else state_v1
+        rl_action, _ = model_rl.predict(state, deterministic=True)
+        rl_action = int(rl_action)
+    except Exception as exc:
+        print(f"⚠️ Prediksi RL gagal ({exc}); fallback ke policy rule-based.")
+        rl_action = None
+
+recommendation = build_budget_recommendation(
+    predicted_watt=prediksi_watt,
+    device_state=device_state,
+    budget_context=budget_context,
+    rl_action=rl_action,
+)
+
+print(
+    f"📊 Daya Aktual: {monitoring_state['Daya']} W | Prediksi SARIMAX (raw): {raw_prediksi_watt:.2f} W | "
+    f"Prediksi dipakai: {prediksi_watt:.2f} W | Target Bulanan: Rp {float(budget_context['monthly_target_rp']):,.0f}"
+)
+print(f"🗣️ Rekomendasi Hemat: {recommendation['combined_advice']}")
+print(f"💰 Indikator hemat hari ini: {recommendation['saving_badge']}")
+
+db.reference("Hasil_AI").set(
+    {
+        "prediksi_daya_selanjutnya": round(float(prediksi_watt), 2),
+        "prediksi_daya_selanjutnya_raw": round(float(raw_prediksi_watt), 2),
+        "prediksi_adjustment": prediksi_adjustment,
+        "rekomendasi_rl": recommendation["combined_advice"],
+        "rekomendasi_ppo": recommendation["ppo_advice"],
+        "rekomendasi_budget": recommendation["budget_advice"],
+        "target_bulanan_rp": round(float(budget_context["monthly_target_rp"]), 2),
+        "target_harian_rp": round(float(budget_context["daily_target_rp"]), 2),
+        "biaya_hari_ini_rp": round(float(budget_context["today_cost_rp"]), 2),
+        "prediksi_biaya_harian_rp": recommendation["predicted_daily_cost_rp"],
+        "proyeksi_bulanan_rp": round(float(budget_context["current_month_run_rate_rp"]), 2),
+        "proyeksi_histori_bulanan_rp": round(float(budget_context["projected_monthly_cost_rp"]), 2),
+        "selisih_target_bulanan_rp": recommendation["over_budget_rp"],
+        "persen_hemat_hari_ini": recommendation["daily_saving_pct"],
+        "nominal_hemat_hari_ini_rp": recommendation["daily_saving_rp"],
+        "rata_rata_biaya_harian_rp": recommendation["average_daily_cost_rp"],
+        "indikator_hemat": recommendation["saving_badge"],
+        "status_target": recommendation["target_status"],
+        "urgency": recommendation["urgency"],
+        "rl_action": rl_action,
+        "sarimax_model_type": sarimax_artifact.get("model_type"),
+        "sarimax_model_path": model_path,
+        "waktu_update": now.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+)
+
+print("✅ Laporan AI hemat berbasis SARIMAX + target budget berhasil dikirim ke Firebase.")
