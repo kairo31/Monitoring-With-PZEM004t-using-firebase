@@ -33,6 +33,10 @@ class TrainRow:
     arus: float
     tegangan: float
     jam: float
+    day_of_week: float
+    is_weekend: float
+    day_progress: float
+    days_remaining: float
 
 
 class BudgetEnergyEnv(Env):
@@ -45,10 +49,43 @@ class BudgetEnergyEnv(Env):
         self.rows = rows
         self.monthly_target_rp = monthly_target_rp
         self.i = 0
+        self.prev_action = 0
 
         self.action_space = spaces.Discrete(5)
-        high = np.array([5000, 60, 1, 1, 1, 1, 23, 5000, 2_000_000, 2_000_000], dtype=np.float32)
-        low = np.array([0, 10, 0, 0, 0, 0, 0, 0, 10_000, -2_000_000], dtype=np.float32)
+        high = np.array(
+            [
+                5000,  # daya
+                60,  # suhu
+                1, 1, 1, 1,  # device flags
+                23,  # jam
+                6,  # day_of_week
+                1,  # is_weekend
+                1,  # is_peak_hour
+                1,  # day_progress
+                31,  # days_remaining
+                5000,  # prediksi_watt
+                2_000_000,  # monthly target
+                2_000_000,  # gap to target
+            ],
+            dtype=np.float32,
+        )
+        low = np.array(
+            [
+                0,
+                10,
+                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                10_000,
+                -2_000_000,
+            ],
+            dtype=np.float32,
+        )
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
     def _device_flags(self, daya: float) -> tuple[int, int, int, int]:
@@ -62,6 +99,7 @@ class BudgetEnergyEnv(Env):
         ac, magicom, wh, tv = self._device_flags(row.daya)
         prediksi_watt = float((0.6 * row.daya) + (0.25 * row.arus * row.tegangan) + (2.0 * row.suhu))
         prediksi_watt = max(prediksi_watt, 0.0)
+        is_peak_hour = 1.0 if (17 <= row.jam <= 22) else 0.0
 
         est_daily_cost = (prediksi_watt / 1000.0) * 24 * TARIF_PER_KWH
         gap_to_target = (est_daily_cost * 30) - self.monthly_target_rp
@@ -75,6 +113,11 @@ class BudgetEnergyEnv(Env):
                 wh,
                 tv,
                 row.jam,
+                row.day_of_week,
+                row.is_weekend,
+                is_peak_hour,
+                row.day_progress,
+                row.days_remaining,
                 prediksi_watt,
                 self.monthly_target_rp,
                 gap_to_target,
@@ -85,13 +128,14 @@ class BudgetEnergyEnv(Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.i = 0
+        self.prev_action = 0
         return self._build_state(self.rows[self.i]), {}
 
     def step(self, action: int):
         row = self.rows[self.i]
         state = self._build_state(row)
-        prediksi_watt = float(state[7])
-        gap_to_target = float(state[9])
+        prediksi_watt = float(state[12])
+        gap_to_target = float(state[14])
 
         reduction_factor = {0: 0.00, 1: 0.12, 2: 0.07, 3: 0.18, 4: 0.05}[int(action)]
         expected_after_action = prediksi_watt * (1.0 - reduction_factor)
@@ -103,8 +147,15 @@ class BudgetEnergyEnv(Env):
             reward -= 0.2
         if gap_to_target > 0 and action == 0:
             reward -= 0.2
+        if int(action) != int(self.prev_action):
+            reward -= 0.03
+        if row.suhu >= 30 and int(action) == 1:
+            reward -= 0.08
+        if row.daya < 120 and int(action) in {1, 3}:
+            reward -= 0.05
 
         self.i += 1
+        self.prev_action = int(action)
         terminated = self.i >= len(self.rows) - 1
         next_state = self._build_state(self.rows[self.i if not terminated else -1])
 
@@ -163,6 +214,10 @@ def load_training_rows() -> list[TrainRow]:
                 arus=float(max(row["Arus"], 0.0)),
                 tegangan=float(max(row["Tegangan"], 0.0)),
                 jam=float(waktu.hour),
+                day_of_week=float(waktu.weekday()),
+                is_weekend=float(1 if waktu.weekday() >= 5 else 0),
+                day_progress=float(waktu.day / max(calendar.monthrange(waktu.year, waktu.month)[1], 1)),
+                days_remaining=float(max(calendar.monthrange(waktu.year, waktu.month)[1] - waktu.day, 0)),
             )
         )
 
