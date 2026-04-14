@@ -71,23 +71,23 @@ jobs:
           mkdir -p model_ai
           python -m pip install gdown
           if [ -n "${SARIMAX_DRIVE_URL}" ]; then
-            gdown --fuzzy "${SARIMAX_DRIVE_URL}" -O "${SARIMAX_MODEL_PATH}"
+            gdown "${SARIMAX_DRIVE_URL}" -O "${SARIMAX_MODEL_PATH}"
           elif [ -n "${SARIMAX_DRIVE_FILE_ID}" ]; then
             gdown "${SARIMAX_DRIVE_FILE_ID}" -O "${SARIMAX_MODEL_PATH}"
           else
-            gdown --fuzzy "${DEFAULT_SARIMAX_DAYA_URL}" -O "${SARIMAX_MODEL_PATH}"
+            gdown "${DEFAULT_SARIMAX_DAYA_URL}" -O "${SARIMAX_MODEL_PATH}"
           fi
           if [ -n "${RL_DRIVE_URL}" ]; then
-            gdown --fuzzy "${RL_DRIVE_URL}" -O "${RL_MODEL_PATH}"
+            gdown "${RL_DRIVE_URL}" -O "${RL_MODEL_PATH}"
           elif [ -n "${RL_DRIVE_FILE_ID}" ]; then
             gdown "${RL_DRIVE_FILE_ID}" -O "${RL_MODEL_PATH}"
           else
-            gdown --fuzzy "${DEFAULT_RL_URL}" -O "${RL_MODEL_PATH}"
+            gdown "${DEFAULT_RL_URL}" -O "${RL_MODEL_PATH}"
           fi
           if [ -n "${SARIMAX_KWH_DRIVE_URL}" ]; then
-            gdown --fuzzy "${SARIMAX_KWH_DRIVE_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+            gdown "${SARIMAX_KWH_DRIVE_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
           else
-            gdown --fuzzy "${DEFAULT_SARIMAX_KWH_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+            gdown "${DEFAULT_SARIMAX_KWH_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
           fi
           echo "=== Isi folder model_ai ==="
           ls -la model_ai
