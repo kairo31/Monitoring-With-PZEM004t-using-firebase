@@ -260,4 +260,6 @@ if __name__ == "__main__":
     model.learn(total_timesteps=TOTAL_TIMESTEPS)
 
     print(f"Saving updated model to {MODEL_OUTPUT_PATH}...")
-    MODEL_OUTPUT_PATH.parent.mkdir(parents=True,
+    MODEL_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    model.save(str(MODEL_OUTPUT_PATH))
+    print("✅ RL Model retrained successfully.")
