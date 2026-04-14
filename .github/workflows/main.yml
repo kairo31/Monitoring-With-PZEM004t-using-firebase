@@ -8,6 +8,16 @@ on:
 jobs:
   job-rekap-dan-ai:
     runs-on: ubuntu-latest
+    env:
+      SARIMAX_DRIVE_URL: ${{ secrets.SARIMAX_DRIVE_URL }}
+      RL_DRIVE_URL: ${{ secrets.RL_DRIVE_URL }}
+      SARIMAX_DRIVE_FILE_ID: ${{ secrets.SARIMAX_DRIVE_FILE_ID }}
+      RL_DRIVE_FILE_ID: ${{ secrets.RL_DRIVE_FILE_ID }}
+      SARIMAX_KWH_DRIVE_URL: ${{ secrets.SARIMAX_KWH_DRIVE_URL }}
+      DEFAULT_SARIMAX_DAYA_URL: https://drive.google.com/file/d/1syzoFBIGYGLbYkzGYgP-n0zodYRz-Uie/view?usp=drive_link
+      DEFAULT_SARIMAX_KWH_URL: https://drive.google.com/file/d/1uquQtO9A7HRiwSGUqj-30Y7jxZparoFn/view?usp=drive_link
+      DEFAULT_RL_URL: https://drive.google.com/file/d/1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY/view?usp=drive_link
+
     steps:
       - name: Ambil Kode
         uses: actions/checkout@v3
@@ -24,19 +34,35 @@ jobs:
           pip install -r requirements.txt
 
       - name: Cek Cache Model AI
-        id: cache-models
+        id: cache-models-main
         uses: actions/cache@v3
         with:
           path: model_ai
-          key: ai-models-v1
+          key: ai-models-main-latest
 
       - name: Download Model AI dari Google Drive
-        if: steps.cache-models.outputs.cache-hit != 'true'
+        if: steps.cache-models-main.outputs.cache-hit != 'true'
         run: |
           mkdir -p model_ai
-          # FIXED: Menghapus argumen --id
-          gdown "1InRo2Z7goQsi5m_OExDKOOUPdn4qXh66" -O "model_ai/model_sarimax_kairo (1).pkl"
-          gdown "1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY" -O "model_ai/model_rl_kairo (1).zip"
+          if [ -n "${SARIMAX_DRIVE_URL}" ]; then
+            gdown --fuzzy "${SARIMAX_DRIVE_URL}" -O "model_ai/sarimax_bundle.pkl"
+          elif [ -n "${SARIMAX_DRIVE_FILE_ID}" ]; then
+            gdown "${SARIMAX_DRIVE_FILE_ID}" -O "model_ai/sarimax_bundle.pkl"
+          else
+            gdown --fuzzy "${DEFAULT_SARIMAX_DAYA_URL}" -O "model_ai/sarimax_bundle.pkl"
+          fi
+          if [ -n "${RL_DRIVE_URL}" ]; then
+            gdown --fuzzy "${RL_DRIVE_URL}" -O "model_ai/model_rl_budget.zip"
+          elif [ -n "${RL_DRIVE_FILE_ID}" ]; then
+            gdown "${RL_DRIVE_FILE_ID}" -O "model_ai/model_rl_budget.zip"
+          else
+            gdown --fuzzy "${DEFAULT_RL_URL}" -O "model_ai/model_rl_budget.zip"
+          fi
+          if [ -n "${SARIMAX_KWH_DRIVE_URL}" ]; then
+            gdown --fuzzy "${SARIMAX_KWH_DRIVE_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+          else
+            gdown --fuzzy "${DEFAULT_SARIMAX_KWH_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+          fi
 
       - name: Run Script Rekap Harian
         env:
