@@ -1,14 +1,14 @@
-name: AI Pipeline Scheduler
+name: AI Cron Pipeline
 
 on:
   workflow_dispatch:
     inputs:
       run_rekap:
-        description: "Run rekap_harian.py"
+        description: "Run Rekap Harian"
         required: false
         default: "true"
       run_worker:
-        description: "Run pekerja_ai.py"
+        description: "Run Pekerja AI"
         required: false
         default: "true"
       retrain_sarimax:
@@ -34,6 +34,14 @@ jobs:
       DEFAULT_MONTHLY_TARGET_RP: ${{ secrets.DEFAULT_MONTHLY_TARGET_RP }}
       RL_MODEL_PATH: model_ai/model_rl_budget.zip
       SARIMAX_MODEL_PATH: model_ai/sarimax_bundle.pkl
+      RL_DRIVE_FILE_ID: ${{ secrets.RL_DRIVE_FILE_ID }}
+      SARIMAX_DRIVE_FILE_ID: ${{ secrets.SARIMAX_DRIVE_FILE_ID }}
+      RL_DRIVE_URL: ${{ secrets.RL_DRIVE_URL }}
+      SARIMAX_DRIVE_URL: ${{ secrets.SARIMAX_DRIVE_URL }}
+      SARIMAX_KWH_DRIVE_URL: ${{ secrets.SARIMAX_KWH_DRIVE_URL }}
+      DEFAULT_SARIMAX_DAYA_URL: https://drive.google.com/file/d/1syzoFBIGYGLbYkzGYgP-n0zodYRz-Uie/view?usp=drive_link
+      DEFAULT_SARIMAX_KWH_URL: https://drive.google.com/file/d/1uquQtO9A7HRiwSGUqj-30Y7jxZparoFn/view?usp=drive_link
+      DEFAULT_RL_URL: https://drive.google.com/file/d/1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY/view?usp=drive_link
 
     steps:
       - name: Checkout
@@ -43,11 +51,46 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Cek Cache Model AI
+        id: cache-models
+        uses: actions/cache@v3
+        with:
+          path: model_ai
+          key: ai-models-latest
+
+      - name: Download AI models from Google Drive
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p model_ai
+          python -m pip install gdown
+          if [ -n "${SARIMAX_DRIVE_URL}" ]; then
+            gdown --fuzzy "${SARIMAX_DRIVE_URL}" -O "${SARIMAX_MODEL_PATH}"
+          elif [ -n "${SARIMAX_DRIVE_FILE_ID}" ]; then
+            gdown "${SARIMAX_DRIVE_FILE_ID}" -O "${SARIMAX_MODEL_PATH}"
+          else
+            gdown --fuzzy "${DEFAULT_SARIMAX_DAYA_URL}" -O "${SARIMAX_MODEL_PATH}"
+          fi
+          if [ -n "${RL_DRIVE_URL}" ]; then
+            gdown --fuzzy "${RL_DRIVE_URL}" -O "${RL_MODEL_PATH}"
+          elif [ -n "${RL_DRIVE_FILE_ID}" ]; then
+            gdown "${RL_DRIVE_FILE_ID}" -O "${RL_MODEL_PATH}"
+          else
+            gdown --fuzzy "${DEFAULT_RL_URL}" -O "${RL_MODEL_PATH}"
+          fi
+          if [ -n "${SARIMAX_KWH_DRIVE_URL}" ]; then
+            gdown --fuzzy "${SARIMAX_KWH_DRIVE_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+          else
+            gdown --fuzzy "${DEFAULT_SARIMAX_KWH_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+          fi
+          echo "=== Isi folder model_ai ==="
+          ls -la model_ai
 
       - name: Rekap harian
         if: ${{ github.event_name == 'schedule' || inputs.run_rekap == 'true' }}
