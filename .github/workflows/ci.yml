@@ -1,4 +1,3 @@
-
 name: CI
 
 on:
@@ -9,6 +8,15 @@ on:
 jobs:
   python-checks:
     runs-on: ubuntu-latest
+    env:
+      SARIMAX_DRIVE_URL: ${{ secrets.SARIMAX_DRIVE_URL }}
+      RL_DRIVE_URL: ${{ secrets.RL_DRIVE_URL }}
+      SARIMAX_DRIVE_FILE_ID: ${{ secrets.SARIMAX_DRIVE_FILE_ID }}
+      RL_DRIVE_FILE_ID: ${{ secrets.RL_DRIVE_FILE_ID }}
+      SARIMAX_KWH_DRIVE_URL: ${{ secrets.SARIMAX_KWH_DRIVE_URL }}
+      DEFAULT_SARIMAX_DAYA_URL: https://drive.google.com/file/d/1syzoFBIGYGLbYkzGYgP-n0zodYRz-Uie/view?usp=drive_link
+      DEFAULT_SARIMAX_KWH_URL: https://drive.google.com/file/d/1uquQtO9A7HRiwSGUqj-30Y7jxZparoFn/view?usp=drive_link
+      DEFAULT_RL_URL: https://drive.google.com/file/d/1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY/view?usp=drive_link
 
     steps:
       - name: Checkout
@@ -18,6 +26,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -28,11 +37,39 @@ jobs:
         run: |
           python -m py_compile pekerja_ai.py rekap_harian.py sarimax_utils.py sarimax_firebase_train.py rl_retrain_budget.py model_ai/pekerja_ai.py
           
+      - name: Cek Cache Model AI
+        id: cache-models-ci
+        uses: actions/cache@v3
+        with:
+          path: model_ai
+          key: ai-models-ci-latest
+
       - name: Download Model AI dari Google Drive
+        if: steps.cache-models-ci.outputs.cache-hit != 'true'
         run: |
           mkdir -p model_ai
           python -m pip install gdown
-          gdown --id "1InRo2Z7goQsi5m_OExDKOOUPdn4qXh66" -O "model_ai/model_sarimax_kairo (1).pkl"
-          gdown --id "1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY" -O "model_ai/model_rl_kairo (1).zip"
+          if [ -n "${SARIMAX_DRIVE_URL}" ]; then
+            gdown --fuzzy "${SARIMAX_DRIVE_URL}" -O "model_ai/sarimax_bundle.pkl"
+          elif [ -n "${SARIMAX_DRIVE_FILE_ID}" ]; then
+            gdown "${SARIMAX_DRIVE_FILE_ID}" -O "model_ai/sarimax_bundle.pkl"
+          else
+            gdown --fuzzy "${DEFAULT_SARIMAX_DAYA_URL}" -O "model_ai/sarimax_bundle.pkl"
+          fi
+          if [ -n "${RL_DRIVE_URL}" ]; then
+            gdown --fuzzy "${RL_DRIVE_URL}" -O "model_ai/model_rl_budget.zip"
+          elif [ -n "${RL_DRIVE_FILE_ID}" ]; then
+            gdown "${RL_DRIVE_FILE_ID}" -O "model_ai/model_rl_budget.zip"
+          else
+            gdown --fuzzy "${DEFAULT_RL_URL}" -O "model_ai/model_rl_budget.zip"
+          fi
+          if [ -n "${SARIMAX_KWH_DRIVE_URL}" ]; then
+            gdown --fuzzy "${SARIMAX_KWH_DRIVE_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+          else
+            gdown --fuzzy "${DEFAULT_SARIMAX_KWH_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+          fi
+          
+      - name: Cek Hasil Download
+        run: |
           echo " === HASIL DOWNLOAD ==="
           ls -la model_ai/
