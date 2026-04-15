@@ -12,7 +12,7 @@ from stable_baselines3 import PPO
 
 from sarimax_utils import forecast_next_step, load_sarimax_artifact
 
-print("🤖 Pekerja AI successful...")
+print("🤖 Pekerja AI berjalan...")
 
 DB_URL = os.getenv(
     "FIREBASE_DB_URL",
@@ -277,7 +277,34 @@ prediksi_watt, prediksi_adjustment = sanitize_predicted_watt(
 rl_action = None
 if model_rl is not None:
     gap_to_target = float(budget_context["current_month_run_rate_rp"]) - float(budget_context["monthly_target_rp"])
+    is_peak_hour = 1.0 if 17 <= jam_skrg <= 22 else 0.0
+    day_of_week = float(now.weekday())
+    is_weekend = float(1 if now.weekday() >= 5 else 0)
+    day_progress = float(now.day / max(int(budget_context["days_in_month"]), 1))
+    days_remaining = float(max(int(budget_context["days_in_month"]) - now.day, 0))
+    
     state_v2 = np.array(
+        [
+            monitoring_state["Daya"],
+            monitoring_state["Suhu"],
+            device_state["AC"],
+            device_state["Magicom"],
+            device_state["Waterheater"],
+            device_state["TV"],
+            jam_skrg,
+            day_of_week,
+            is_weekend,
+            is_peak_hour,
+            day_progress,
+            days_remaining,
+            prediksi_watt,
+            float(budget_context["monthly_target_rp"]),
+            gap_to_target,
+        ],
+        dtype=np.float32,
+    )
+    
+    state_v1_10d = np.array(
         [
             monitoring_state["Daya"],
             monitoring_state["Suhu"],
@@ -292,6 +319,7 @@ if model_rl is not None:
         ],
         dtype=np.float32,
     )
+    
     state_v1 = np.array(
         [
             monitoring_state["Daya"],
@@ -311,7 +339,13 @@ if model_rl is not None:
         expected_obs_dim = len(state_v2)
 
     try:
-        state = state_v2 if expected_obs_dim >= len(state_v2) else state_v1
+        if expected_obs_dim >= len(state_v2):
+            state = state_v2
+        elif expected_obs_dim >= len(state_v1_10d):
+            state = state_v1_10d
+        else:
+            state = state_v1
+            
         rl_action, _ = model_rl.predict(state, deterministic=True)
         rl_action = int(rl_action)
     except Exception as exc:
