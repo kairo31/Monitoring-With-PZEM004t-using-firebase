@@ -1,14 +1,14 @@
-name: AI Cron Pipeline
+name: AI Pipeline Scheduler
 
 on:
   workflow_dispatch:
     inputs:
       run_rekap:
-        description: "Run Rekap Harian"
+        description: "Run rekap_harian.py"
         required: false
         default: "true"
       run_worker:
-        description: "Run Pekerja AI"
+        description: "Run pekerja_ai.py"
         required: false
         default: "true"
       retrain_sarimax:
@@ -24,7 +24,6 @@ on:
 
 jobs:
   run-pipeline:
-    if: ${{ secrets.FIREBASE_KEY != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -58,15 +57,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check required secrets
+        id: gate
+        run: |
+          if [ -z "${FIREBASE_KEY}" ] || [ -z "${FIREBASE_DB_URL}" ]; then
+            echo "required_ready=false" >> "${GITHUB_OUTPUT}"
+            echo "FIREBASE_KEY atau FIREBASE_DB_URL belum di-set. Step runtime akan dilewati."
+          else
+            echo "required_ready=true" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Cek Cache Model AI
         id: cache-models
         uses: actions/cache@v3
+        if: ${{ steps.gate.outputs.required_ready == 'true' }}
         with:
           path: model_ai
           key: ai-models-latest
 
       - name: Download AI models from Google Drive
-        if: steps.cache-models.outputs.cache-hit != 'true'
+        if: ${{ steps.gate.outputs.required_ready == 'true' && steps.cache-models.outputs.cache-hit != 'true' }}
         run: |
           mkdir -p model_ai
           python -m pip install gdown
@@ -93,26 +103,17 @@ jobs:
           ls -la model_ai
 
       - name: Rekap harian
-        if: ${{ github.event_name == 'schedule' || inputs.run_rekap == 'true' }}
+        if: ${{ steps.gate.outputs.required_ready == 'true' && (github.event_name == 'schedule' || inputs.run_rekap == 'true') }}
         run: python rekap_harian.py
 
       - name: AI worker inference
-        if: ${{ github.event_name == 'schedule' || inputs.run_worker == 'true' }}
+        if: ${{ steps.gate.outputs.required_ready == 'true' && (github.event_name == 'schedule' || inputs.run_worker == 'true') }}
         run: python pekerja_ai.py
 
       - name: Retrain SARIMAX
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.retrain_sarimax == 'true' }}
+        if: ${{ steps.gate.outputs.required_ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.retrain_sarimax == 'true' }}
         run: python sarimax_firebase_train.py
 
       - name: Retrain RL
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.retrain_rl == 'true' }}
+        if: ${{ steps.gate.outputs.required_ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.retrain_rl == 'true' }}
         run: python rl_retrain_budget.py
-
-  missing-secrets-info:
-    if: ${{ secrets.FIREBASE_KEY == '' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Explain missing secrets
-        run: |
-          echo "FIREBASE_KEY secret belum di-set, job pipeline dilewati." 
-          echo "Tambahkan FIREBASE_KEY dan FIREBASE_DB_URL pada repository secrets."
