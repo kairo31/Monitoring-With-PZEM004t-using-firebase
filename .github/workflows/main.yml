@@ -20,56 +20,70 @@ jobs:
 
     steps:
       - name: Ambil Kode
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
           cache: 'pip'
 
       - name: Install Library
         run: |
+          python -m pip install --upgrade pip
           pip install firebase-admin pytz gdown
           pip install -r requirements.txt
+
+      - name: Check required secrets
+        id: gate
+        run: |
+          if [ -z "${{ secrets.FIREBASE_KEY }}" ]; then
+            echo "required_ready=false" >> "${GITHUB_OUTPUT}"
+            echo "FIREBASE_KEY belum di-set. Step runtime akan dilewati."
+          else
+            echo "required_ready=true" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Cek Cache Model AI
         id: cache-models-main
         uses: actions/cache@v3
+        if: ${{ steps.gate.outputs.required_ready == 'true' }}
         with:
           path: model_ai
           key: ai-models-main-latest
 
       - name: Download Model AI dari Google Drive
-        if: steps.cache-models-main.outputs.cache-hit != 'true'
+        if: ${{ steps.gate.outputs.required_ready == 'true' && steps.cache-models-main.outputs.cache-hit != 'true' }}
         run: |
           mkdir -p model_ai
           if [ -n "${SARIMAX_DRIVE_URL}" ]; then
-            gdown --fuzzy "${SARIMAX_DRIVE_URL}" -O "model_ai/sarimax_bundle.pkl"
+            gdown "${SARIMAX_DRIVE_URL}" -O "model_ai/sarimax_bundle.pkl"
           elif [ -n "${SARIMAX_DRIVE_FILE_ID}" ]; then
             gdown "${SARIMAX_DRIVE_FILE_ID}" -O "model_ai/sarimax_bundle.pkl"
           else
-            gdown --fuzzy "${DEFAULT_SARIMAX_DAYA_URL}" -O "model_ai/sarimax_bundle.pkl"
+            gdown "${DEFAULT_SARIMAX_DAYA_URL}" -O "model_ai/sarimax_bundle.pkl"
           fi
           if [ -n "${RL_DRIVE_URL}" ]; then
-            gdown --fuzzy "${RL_DRIVE_URL}" -O "model_ai/model_rl_budget.zip"
+            gdown "${RL_DRIVE_URL}" -O "model_ai/model_rl_budget.zip"
           elif [ -n "${RL_DRIVE_FILE_ID}" ]; then
             gdown "${RL_DRIVE_FILE_ID}" -O "model_ai/model_rl_budget.zip"
           else
-            gdown --fuzzy "${DEFAULT_RL_URL}" -O "model_ai/model_rl_budget.zip"
+            gdown "${DEFAULT_RL_URL}" -O "model_ai/model_rl_budget.zip"
           fi
           if [ -n "${SARIMAX_KWH_DRIVE_URL}" ]; then
-            gdown --fuzzy "${SARIMAX_KWH_DRIVE_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+            gdown "${SARIMAX_KWH_DRIVE_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
           else
-            gdown --fuzzy "${DEFAULT_SARIMAX_KWH_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
+            gdown "${DEFAULT_SARIMAX_KWH_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
           fi
 
       - name: Run Script Rekap Harian
+        if: ${{ steps.gate.outputs.required_ready == 'true' }}
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
         run: python rekap_harian.py
 
       - name: Jalankan Mandor AI
+        if: ${{ steps.gate.outputs.required_ready == 'true' }}
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }} 
         run: python pekerja_ai.py
