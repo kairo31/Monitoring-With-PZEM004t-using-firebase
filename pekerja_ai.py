@@ -242,7 +242,7 @@ def build_budget_recommendation(
 
 
 initialize_firebase()
-print("🧠 Memuat otak SARIMAX dan RL...")
+print(" Memuat otak SARIMAX dan RL...")
 
 model_path = SARIMAX_MODEL_PATH if os.path.exists(SARIMAX_MODEL_PATH) else LEGACY_SARIMAX_MODEL_PATH
 sarimax_artifact = load_sarimax_artifact(model_path)
@@ -266,13 +266,35 @@ latest_features = {
     "Arus": monitoring_state["Arus"],
     "Tegangan": monitoring_state["Tegangan"],
 }
-raw_prediksi_watt = forecast_next_step(sarimax_artifact, latest_features, current_watt=monitoring_state["Daya"])
-recent_daya_stats = fetch_recent_daya_stats()
-prediksi_watt, prediksi_adjustment = sanitize_predicted_watt(
-    raw_prediction=raw_prediksi_watt,
+
+# Ambil list prediksi untuk beberapa step ke depan
+raw_prediksi_watt_list = forecast_next_step(
+    artifact=sarimax_artifact, 
+    latest_features=latest_features, 
     current_watt=monitoring_state["Daya"],
-    stats=recent_daya_stats,
+    steps=6  # Contoh: Ambil 6 langkah ke depan
 )
+
+recent_daya_stats = fetch_recent_daya_stats()
+
+# Lakukan sanitasi untuk SETIAP elemen di dalam list
+prediksi_watt_list = []
+prediksi_adjustment_reasons = []
+
+for raw_val in raw_prediksi_watt_list:
+    clean_val, reason = sanitize_predicted_watt(
+        raw_prediction=raw_val,
+        current_watt=monitoring_state["Daya"],
+        stats=recent_daya_stats,
+    )
+    prediksi_watt_list.append(round(clean_val, 2))
+    prediksi_adjustment_reasons.append(reason)
+
+# Gunakan index ke-0 (prediksi step terdekat) sebagai acuan untuk RL dan Budgeting
+prediksi_watt = prediksi_watt_list[0]
+raw_prediksi_watt = raw_prediksi_watt_list[0]
+prediksi_adjustment = prediksi_adjustment_reasons[0]
+
 
 rl_action = None
 if model_rl is not None:
@@ -360,15 +382,17 @@ recommendation = build_budget_recommendation(
 )
 
 print(
-    f"📊 Daya Aktual: {monitoring_state['Daya']} W | Prediksi SARIMAX (raw): {raw_prediksi_watt:.2f} W | "
+    f" Daya Aktual: {monitoring_state['Daya']} W | Prediksi SARIMAX (raw): {raw_prediksi_watt:.2f} W | "
     f"Prediksi dipakai: {prediksi_watt:.2f} W | Target Bulanan: Rp {float(budget_context['monthly_target_rp']):,.0f}"
 )
-print(f"🗣️ Rekomendasi Hemat: {recommendation['combined_advice']}")
-print(f"💰 Indikator hemat hari ini: {recommendation['saving_badge']}")
+print(f" Proyeksi Masa Depan (6 Steps): {prediksi_watt_list}")
+print(f" Rekomendasi Hemat: {recommendation['combined_advice']}")
+print(f" Indikator hemat hari ini: {recommendation['saving_badge']}")
 
 db.reference("Hasil_AI").set(
     {
         "prediksi_daya_selanjutnya": round(float(prediksi_watt), 2),
+        "prediksi_masa_depan": prediksi_watt_list, # Array prediksi dikirim ke Firebase
         "prediksi_daya_selanjutnya_raw": round(float(raw_prediksi_watt), 2),
         "prediksi_adjustment": prediksi_adjustment,
         "rekomendasi_rl": recommendation["combined_advice"],
