@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Demo Analyzer Skripsi (Non-Live)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <style>
+    :root { --primary:#2c3e50; --success:#1cc88a; --warn:#f6c23e; --bg:#f8f9fc; --shadow:0 10px 25px rgba(0,0,0,.06); }
+    *{box-sizing:border-box} body{margin:0;font-family:Poppins,sans-serif;background:var(--bg);color:#1f2937;padding:24px;display:flex;justify-content:center}
+    .wrap{width:100%;max-width:1100px}
+    .header,.card{background:#fff;border-radius:16px;box-shadow:var(--shadow);border:1px solid #e5e7eb}
+    .header{padding:24px;margin-bottom:18px}
+    .header h1{margin:0 0 6px;color:var(--primary)}
+    .header p{margin:0;color:#6b7280}
+    .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+    .card{padding:18px}
+    h3{margin-top:0;color:var(--primary)}
+    .row{display:grid;grid-template-columns:1fr 110px;gap:8px;margin-bottom:8px;align-items:center}
+    input[type=number],input[type=date]{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:10px;font-family:inherit}
+    button{border:none;border-radius:10px;padding:11px 14px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer}
+    .result{margin-top:12px;padding:12px;border-radius:10px;background:#f3f4f6;font-size:.95rem}
+    .kpi{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+    .kpi div{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:10px}
+    .bar{height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden}
+    .bar > span{display:block;height:100%;background:var(--success)}
+    .muted{color:#6b7280;font-size:.9rem}
+    .tag{display:inline-block;padding:5px 10px;border-radius:999px;font-size:.8rem;font-weight:700;background:#eef2ff;color:#3730a3}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>Demo Analyzer Skripsi (Tanpa Live Sensor)</h1>
+    <p>Simulasikan komposisi penggunaan perangkat per bulan, lihat prediksi konsumsi/biaya, cek histori tanggal tertentu, dan hitung persentase perangkat aktif dari data lama.</p>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h3>1) Simulasi Komposisi Perangkat</h3>
+      <p class="muted">Masukkan persentase kontribusi perangkat untuk bulan simulasi. Contoh: AC 40, Waterheater 23, TV 30.</p>
+      <div id="deviceInputs"></div>
+      <button id="runSimBtn">Jalankan Simulasi SARIMAX-like</button>
+      <div class="result" id="simResult">Belum ada simulasi.</div>
+    </section>
+
+    <section class="card">
+      <h3>2) Cek Histori Tanggal Tertentu</h3>
+      <p class="muted">Pilih tanggal untuk melihat ringkasan penggunaan, indikasi prediksi, dan rekomendasi AI (jika tersedia).</p>
+      <div class="row">
+        <label for="datePick">Tanggal histori</label>
+        <input id="datePick" type="date" />
+      </div>
+      <button id="checkDateBtn">Ambil Data Tanggal Ini</button>
+      <div class="result" id="dateResult">Belum ada tanggal dipilih.</div>
+    </section>
+
+    <section class="card" style="grid-column:1/-1;">
+      <h3>3) Persentase Perangkat Aktif (Semasa Pengambilan Data)</h3>
+      <p class="muted">Diambil dari node <code>log_konfirmasi</code> untuk seluruh riwayat yang tersedia.</p>
+      <button id="calcHistoryBtn">Hitung Persentase Aktivasi</button>
+      <div class="result" id="historyResult">Klik tombol untuk menghitung.</div>
+    </section>
+  </div>
+</div>
+
+<script>
+  const firebaseConfig = { databaseURL: "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app" };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  const TARIF = 1352;
+  const DEVICE_WATT = {
+    AC: 450,
+    Waterheater: 800,
+    TV: 90,
+    Magicom: 120,
+    Laptop: 70,
+    Lainnya: 150,
+  };
+
+  const deviceInputs = document.getElementById('deviceInputs');
+  Object.keys(DEVICE_WATT).forEach((name) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<label>${name} <span class="muted">(~${DEVICE_WATT[name]}W)</span></label><input type="number" min="0" max="100" value="0" id="pct_${name}" />`;
+    deviceInputs.appendChild(row);
+  });
+
+  const idr = (n) => "Rp " + Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
+  const extractTimestamp = (item) => {
+    const candidates = [item?.waktu, item?.timeskip, item?.timestamp, item?.timeSkip];
+    for (const raw of candidates) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return 0;
+  };
+  const safeRead = async (path) => {
+    try {
+      const snap = await db.ref(path).once('value');
+      return snap.val();
+    } catch (err) {
+      const msg = String(err?.message || '');
+      if (msg.includes('permission_denied')) return null;
+      throw err;
+    }
+  };
+
+  document.getElementById('runSimBtn').addEventListener('click', () => {
+    const usage = {};
+    let totalPct = 0;
+    Object.keys(DEVICE_WATT).forEach((name) => {
+      const val = Number(document.getElementById(`pct_${name}`).value || 0);
+      usage[name] = Math.max(val, 0);
+      totalPct += usage[name];
+    });
+
+    if (totalPct <= 0) {
+      document.getElementById('simResult').innerText = 'Masukkan minimal satu persentase > 0.';
+      return;
+    }
+
+    let weightedWatt = 0;
+    Object.keys(DEVICE_WATT).forEach((name) => {
+      const normalized = usage[name] / totalPct;
+      weightedWatt += DEVICE_WATT[name] * normalized;
+    });
+
+    const monthlyKwh = (weightedWatt * 24 * 30) / 1000;
+    const monthlyCost = monthlyKwh * TARIF;
+    const dailyCost = (weightedWatt * 24 / 1000) * TARIF;
+
+    const top = Object.entries(usage).sort((a,b)=>b[1]-a[1])[0];
+    const suggestion = top && top[0] === 'Waterheater'
+      ? 'Keputusan RL demo: kurangi durasi Waterheater saat jam puncak.'
+      : top && top[0] === 'AC'
+      ? 'Keputusan RL demo: naikkan setpoint AC 1-2°C.'
+      : 'Keputusan RL demo: pertahankan pola, prioritaskan beban utama saja.';
+
+    document.getElementById('simResult').innerHTML = `
+      <div><span class="tag">Prediksi Simulasi</span></div>
+      <div class="kpi">
+        <div><strong>Prediksi Daya Rata-rata</strong><br>${weightedWatt.toFixed(1)} W</div>
+        <div><strong>Prediksi Biaya Harian</strong><br>${idr(dailyCost)}</div>
+        <div><strong>Prediksi kWh Bulanan</strong><br>${monthlyKwh.toFixed(2)} kWh</div>
+        <div><strong>Prediksi Biaya Bulanan</strong><br>${idr(monthlyCost)}</div>
+      </div>
+      <p style="margin:10px 0 0 0;"><strong>${suggestion}</strong></p>
+    `;
+  });
+
+  document.getElementById('checkDateBtn').addEventListener('click', async () => {
+    const picked = document.getElementById('datePick').value;
+    if (!picked) {
+      document.getElementById('dateResult').innerText = 'Silakan pilih tanggal terlebih dahulu.';
+      return;
+    }
+
+    const start = new Date(picked + 'T00:00:00').getTime();
+    const end = new Date(picked + 'T23:59:59').getTime();
+
+    try {
+      const [histRaw, rekapRaw, aiDailyRaw, aiCurrentRaw] = await Promise.all([
+        db.ref('history').orderByKey().limitToLast(50000).once('value').then((s) => s.val()),
+        safeRead(`rekap_harian/history/${picked}`),
+        safeRead(`riwayat_ai/${picked}`),
+        safeRead('Hasil_AI'),
+      ]);
+
+      const hist = histRaw || {};
+      const dayRows = Object.values(hist).filter((v) => {
+        const t = extractTimestamp(v);
+        return t >= start && t <= end;
+      });
+
+      const avgW = dayRows.length ? (dayRows.reduce((a,b)=>a+Number(b?.Daya||0),0) / dayRows.length) : 0;
+      const maxW = dayRows.length ? Math.max(...dayRows.map((v)=>Number(v?.Daya||0))) : 0;
+
+      const rekap = rekapRaw || {};
+      const aiDaily = aiDailyRaw || null;
+      const aiNow = aiCurrentRaw || {};
+      const ai = aiDaily || aiNow;
+      const hasAiDailyAccess = aiDailyRaw !== null;
+
+      document.getElementById('dateResult').innerHTML = `
+        <div><span class="tag">Histori ${picked}</span></div>
+        <div class="kpi">
+          <div><strong>Sample Monitoring</strong><br>${dayRows.length} data</div>
+          <div><strong>Rata-rata Daya</strong><br>${avgW.toFixed(1)} W</div>
+          <div><strong>Puncak Daya</strong><br>${maxW.toFixed(1)} W</div>
+          <div><strong>Biaya Harian Tercatat</strong><br>${idr(rekap?.biaya_rp || 0)}</div>
+        </div>
+        <p style="margin:10px 0 0 0;"><strong>Prediksi SARIMAX:</strong> ${(Number(ai?.prediksi_daya_selanjutnya || 0)).toFixed(1)} W | <strong>Rekomendasi RL:</strong> ${ai?.rekomendasi_ppo || ai?.rekomendasi_rl || 'Belum ada data riwayat rekomendasi untuk tanggal ini.'}</p>
+        <p class="muted" style="margin:6px 0 0 0;">${hasAiDailyAccess ? 'Catatan: untuk rekomendasi per tanggal yang akurat, simpan snapshot AI harian di node <code>riwayat_ai/YYYY-MM-DD</code>.' : 'Catatan: akses ke node <code>riwayat_ai</code> ditolak oleh rules Firebase, jadi hasil memakai fallback dari <code>Hasil_AI</code>.'}</p>
+      `;
+    } catch (err) {
+      document.getElementById('dateResult').innerText = 'Gagal mengambil histori tanggal: ' + err.message;
+    }
+  });
+
+  document.getElementById('calcHistoryBtn').addEventListener('click', async () => {
+    try {
+      const snap = await db.ref('log_konfirmasi').orderByKey().limitToLast(5000).once('value');
+      const rows = Object.values(snap.val() || {});
+      if (!rows.length) {
+        document.getElementById('historyResult').innerText = 'Tidak ada data log_konfirmasi.';
+        return;
+      }
+
+      const keys = ['AC','Waterheater','TV','Magicom','Laptop'];
+      const counts = Object.fromEntries(keys.map(k => [k, 0]));
+      rows.forEach((r) => keys.forEach((k) => { if (Number(r?.[k] || 0) === 1) counts[k] += 1; }));
+
+      const html = keys.map((k) => {
+        const pct = (counts[k] / rows.length) * 100;
+        return `
+          <div style="margin-bottom:10px;">
+            <div style="display:flex;justify-content:space-between;"><strong>${k}</strong><span>${pct.toFixed(1)}%</span></div>
+            <div class="bar"><span style="width:${Math.min(pct,100)}%"></span></div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('historyResult').innerHTML = `<div><span class="tag">Total Sampel ${rows.length}</span></div><div style="margin-top:10px;">${html}</div>`;
+    } catch (err) {
+      document.getElementById('historyResult').innerText = 'Gagal hitung persentase: ' + err.message;
+    }
+  });
+</script>
+</body>
+</html>
