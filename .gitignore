@@ -58,4 +58,5 @@ node_modules/
 .env
 sarimax_kwh_jam (3).pkl
 firebase_key.json
+test-reading-the-pzem-default-rtdb-export (9).json
 
