@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulator Alur Sistem - Smart Power Monitoring</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #050505;
+      --panel: #ffffff;
+      --ink: #111111;
+      --muted: #444444;
+      --line: #ffffff;
+      --accent: #1cc88a;
+      --primary: #2c3e50;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--panel);
+      font-family: Poppins, sans-serif;
+      padding: 22px;
+    }
+
+    .page-shell {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: clamp(1.4rem, 3vw, 2.1rem);
+      font-weight: 800;
+    }
+
+    .topbar p {
+      margin: 4px 0 0;
+      color: #d1d5db;
+      font-size: .95rem;
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 800;
+      background: var(--panel);
+      color: var(--ink);
+      border: 2px solid var(--panel);
+    }
+
+    .link-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #06281d;
+    }
+
+    .diagram-wrap {
+      width: 100%;
+      overflow-x: auto;
+      padding-bottom: 10px;
+    }
+
+    .diagram-canvas {
+      position: relative;
+      min-width: 980px;
+      height: 620px;
+      background: #000;
+      border: 1px solid #1f2937;
+      border-radius: 18px;
+      box-shadow: 0 18px 45px rgba(0,0,0,.38);
+      overflow: hidden;
+    }
+
+    .node {
+      position: absolute;
+      background: var(--panel);
+      color: var(--ink);
+      border: 2px solid #f3f4f6;
+      box-shadow: 0 8px 0 rgba(255,255,255,.04);
+      z-index: 2;
+    }
+
+    .box {
+      min-width: 150px;
+      min-height: 70px;
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 1.15rem;
+      line-height: 1.25;
+    }
+
+    .box.small { min-width: 138px; min-height: 68px; }
+    .box.wide { min-width: 210px; }
+    .box.tall { min-width: 218px; min-height: 106px; }
+
+    .firebase {
+      left: 345px;
+      top: 235px;
+      width: 340px;
+      min-height: 215px;
+      padding: 26px 22px 20px;
+    }
+
+    .firebase h2 {
+      margin: 0 0 18px;
+      font-size: 2rem;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    .firebase-lists {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      font-size: .88rem;
+      line-height: 1.2;
+    }
+
+    .firebase ul,
+    .cloud ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .cloud {
+      right: 66px;
+      top: 28px;
+      width: 170px;
+      height: 132px;
+      border-radius: 48% 52% 45% 55% / 55% 45% 55% 45%;
+      padding: 38px 22px 18px;
+      text-align: center;
+    }
+
+    .cloud::before,
+    .cloud::after {
+      content: "";
+      position: absolute;
+      background: var(--panel);
+      border-radius: 50%;
+      z-index: -1;
+    }
+
+    .cloud::before {
+      width: 78px;
+      height: 78px;
+      left: 28px;
+      top: -25px;
+    }
+
+    .cloud::after {
+      width: 70px;
+      height: 70px;
+      right: 8px;
+      top: -10px;
+    }
+
+    .cloud h2 {
+      margin: 0 0 12px;
+      font-size: 1.28rem;
+      font-weight: 500;
+    }
+
+    .cloud ul {
+      text-align: left;
+      font-size: .72rem;
+      line-height: 1.22;
+    }
+
+    .beban { left: 36px; top: 120px; }
+    .esp { left: 28px; top: 260px; }
+    .vscode { left: 52px; top: 392px; }
+    .github { left: 438px; top: 54px; }
+    .colab { right: 42px; top: 310px; }
+    .dashboard { left: 438px; bottom: 44px; }
+
+    .arrow-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .legend {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .legend-card {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 14px;
+      padding: 14px;
+      color: #f9fafb;
+    }
+
+    .legend-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #ffffff;
+    }
+
+    .legend-card span {
+      color: #d1d5db;
+      font-size: .9rem;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 760px) {
+      body { padding: 14px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .nav-actions { justify-content: flex-start; }
+      .legend { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="topbar">
+      <div>
+        <h1>Simulator Alur Sistem</h1>
+        <p>Visual alur seperti sketsa: beban listrik → ESP32/PZEM → Firebase → Colab/GitHub/Drive → Dashboard.</p>
+      </div>
+      <nav class="nav-actions" aria-label="Navigasi halaman">
+        <a class="link-btn primary" href="demo.html">🎓 Demo</a>
+        <a class="link-btn" href="monitoring.html">⚡ Monitoring</a>
+        <a class="link-btn" href="index.html">🏠 Portal</a>
+      </nav>
+    </header>
+
+    <section class="diagram-wrap" aria-label="Diagram alur sistem monitoring listrik">
+      <div class="diagram-canvas">
+        <svg class="arrow-layer" viewBox="0 0 980 620" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill="#ffffff" />
+            </marker>
+          </defs>
+          <path d="M190 295 L345 325" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
+          <path d="M125 190 L125 260" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
+          <path d="M142 392 L142 366" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
+          <path d="M345 280 L540 125" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
+          <path d="M585 235 L785 130" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
+          <path d="M685 340 L822 340" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
+          <path d="M515 450 L515 548" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
+          <path d="M825 390 L675 430" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
+        </svg>
+
+        <div class="node box small beban">Beban Listrik</div>
+        <div class="node box tall esp">ESP32 + Pzem004T<br><span style="font-size:.94rem;">(Coded in Arduino IDE)</span></div>
+        <div class="node box vscode">Visual Studio<br>Code</div>
+        <div class="node box github">Github</div>
+
+        <div class="node cloud">
+          <h2>Google Drive</h2>
+          <ul>
+            <li>Model SARIMAX (.pkl)</li>
+            <li>Model RL (.zip)</li>
+          </ul>
+        </div>
+
+        <div class="node firebase">
+          <h2>Firebase</h2>
+          <div class="firebase-lists">
+            <ul>
+              <li>Hasil AI</li>
+              <li>Kwh harian</li>
+              <li>Monitoring</li>
+              <li>Dashboard info</li>
+              <li>Histori</li>
+            </ul>
+            <ul>
+              <li>Log konfirmasi</li>
+              <li>Rekap harian</li>
+              <li>User confirmation</li>
+              <li>User preference</li>
+              <li>Evaluasi model SARIMAX</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="node box small colab">Google<br>Colab</div>
+        <div class="node box wide dashboard">Dashboard</div>
+      </div>
+    </section>
+
+    <section class="legend" aria-label="Keterangan alur">
+      <article class="legend-card">
+        <strong>Receive dari hardware</strong>
+        <span>Beban listrik dibaca PZEM004T, ESP32 text data ke Firebase pada node Monitoring/Histori.</span>
+      </article>
+      <article class="legend-card">
+        <strong>Receive + text model</strong>
+        <span>Google Colab/GitHub/Drive menyimpan kode dan model, lalu text hasil AI/evaluasi kembali ke Firebase.</span>
+      </article>
+      <article class="legend-card">
+        <strong>Receive ke dashboard</strong>
+        <span>Dashboard dan demo hanya receive node Firebase untuk menampilkan monitoring, histori, rekomendasi, dan evaluasi.</span>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

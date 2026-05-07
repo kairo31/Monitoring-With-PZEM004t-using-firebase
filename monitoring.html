@@ -318,6 +318,20 @@
             display: none !important;
         }
 
+        .eval-box {
+            margin-top: 16px;
+            background: #f8f9fc;
+            border: 1px solid #eaecf4;
+            border-radius: 12px;
+            padding: 12px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.85rem;
+            color: #4b5563;
+            max-height: 220px;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+
         /* Responsif untuk HP */
         @media (max-width: 850px) {
             .grid-container { grid-template-columns: repeat(2, 1fr); }
@@ -450,6 +464,10 @@
     <div class="card-chart" data-tab-group="ai">
         <h3>Visual Prediksi SARIMAX vs Aktual</h3>
         <div class="chart-container"><canvas id="chartSarimax"></canvas></div>
+        <div style="margin-top: 14px;">
+            <div style="font-size:0.8rem; font-weight:800; color:#858796; letter-spacing:0.5px;">📊 EVALUASI MODEL SARIMAX (Firebase: <code>Evaluasi_Model_SARIMAX</code>)</div>
+            <div id="valSarimaxEval" class="eval-box">Menunggu data evaluasi model...</div>
+        </div>
     </div>
 
     <div class="card-chart" data-tab-group="live">
@@ -657,6 +675,16 @@
 
     db.ref('Hasil_AI').on('value', (s) => {
         applyAiPayload(s.val());
+    });
+
+    db.ref('Evaluasi_Model_SARIMAX').on('value', (s) => {
+        const d = s.val();
+        const target = document.getElementById('valSarimaxEval');
+        if (!d) {
+            target.innerText = 'Node Evaluasi_Model_SARIMAX belum ada data.';
+            return;
+        }
+        target.innerText = JSON.stringify(d, null, 2);
     });
 
     db.ref('user_preferences').on('value', (s) => {
