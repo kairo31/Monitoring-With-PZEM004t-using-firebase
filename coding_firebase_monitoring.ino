@@ -15,8 +15,8 @@ DHT dht(DHTPIN, DHTTYPE);
 PZEM004Tv30 pzem(Serial2, 16, 17);
 
 // --- 2. KONFIGURASI FIREBASE ---
-#define FIREBASE_HOST "test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app"
-#define FIREBASE_AUTH "AIzaSyCf7K96qmZMSzkkd2XQTPvmx2CGlw7PNTY" // Catatan: Sebaiknya pakai Database Secret (40 karakter) agar lebih stabil
+#define FIREBASE_HOST "-firebasedatabase.app"
+#define FIREBASE_AUTH "" // Catatan: Sebaiknya pakai Database Secret (40 karakter) agar lebih stabil
 
 FirebaseData fbdo;
 FirebaseAuth auth;
