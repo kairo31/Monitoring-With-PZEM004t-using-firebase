@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Power Monitoring - Budget & AI Dashboard</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        /* Desain Variabel Warna Profesional */
+        :root {
+            --primary: #2c3e50;
+            --primary-gradient: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            --success: #1cc88a;
+            --warning: #f6c23e;
+            --danger: #e74a3b;
+            --dark: #2a2d34;
+            --light: #f8f9fc;
+            --info: #36b9cc;
+            --card-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--light);
+            margin: 0;
+            padding: 25px 20px;
+            color: var(--dark);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* Styling Komponen Layout Utama */
+        .header, .card-main, .card-chart, .control-panel {
+            width: 100%;
+            max-width: 1100px;
+            margin-bottom: 25px;
+            animation: fadeInUp 0.7s ease-out backwards;
+        }
+
+        .header {
+            background: var(--primary-gradient);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 20px;
+            box-shadow: var(--card-shadow);
+        }
+
+        .header h1 { margin: 0 0 10px 0; font-weight: 800; letter-spacing: 1px; }
+        .header p { margin: 0; font-weight: 400; opacity: 0.9; }
+
+        .grid-container, .summary-grid {
+            display: grid;
+            gap: 15px;
+            width: 100%;
+            max-width: 1100px;
+            margin-bottom: 25px;
+        }
+
+        .grid-container { grid-template-columns: repeat(5, 1fr); }
+        .summary-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+        .card-small, .summary-item {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: var(--card-shadow);
+            border-bottom: 5px solid var(--primary);
+            transition: transform 0.3s;
+        }
+        
+        .card-small:hover { transform: translateY(-5px); }
+
+        .card-small h3, .summary-item div {
+            font-size: 0.85rem;
+            color: #858796;
+            margin: 0;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .card-small .value, .summary-item .value {
+            font-size: 1.25rem;
+            font-weight: 800;
+            display: block;
+            margin-top: 5px;
+            color: var(--dark);
+        }
+
+        /* Bagian Daya Utama */
+        .card-main {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: var(--card-shadow);
+            border: 1px solid #eaecf4;
+            position: relative;
+        }
+
+        .card-main h3 { margin-top: 0; color: #858796; font-size: 1rem; text-transform: uppercase; }
+
+        .big-watt {
+            font-size: 5.5rem;
+            font-weight: 900;
+            color: var(--primary);
+            margin: 0;
+            line-height: 1;
+        }
+
+        .cost-box, .saving-box {
+            margin: 20px 10px;
+            padding: 15px 25px;
+            border-radius: 12px;
+            display: inline-block;
+        }
+
+        .cost-box { background: #f8f9fc; border: 1px solid #eaecf4; }
+        .saving-box { background: rgba(28, 200, 138, 0.12); color: var(--success); font-weight: 700; border: 1px solid #c3e6cb; }
+
+        #valBiayaHariIni, #valSavingPct {
+            font-size: 1.8rem;
+            font-weight: 800;
+            display: block;
+            margin-top: 5px;
+        }
+
+        .device-tag {
+            font-weight: 700;
+            padding: 8px 25px;
+            border-radius: 50px;
+            background: #e9ecef;
+            color: var(--primary);
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+
+        /* Bagian Prediksi AI */
+        .ai-section {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr;
+            gap: 20px;
+            border-top: 2px dashed #eee;
+            padding-top: 25px;
+            margin-top: 25px;
+            text-align: left;
+        }
+
+        .ai-val {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: var(--warning);
+            margin: 5px 0;
+        }
+
+        /* GRID CONTROL PANEL (User Input & Budget) */
+        .control-panel {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+        }
+
+        .budget-card, .device-card {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: var(--card-shadow);
+            border: 1px solid #eaecf4;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .budget-card h3, .device-card h3 { margin-top: 0; color: var(--primary); font-size: 1.2rem; }
+        .budget-card p, .device-card p { color: #858796; font-size: 0.9rem; line-height: 1.5; margin-bottom: 20px; }
+
+        /* Konfirmasi Perangkat */
+        .device-checklist {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .device-item {
+            background: #f8f9fc;
+            padding: 10px 20px;
+            border-radius: 50px;
+            border: 1px solid #eaecf4;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--primary);
+            transition: 0.3s;
+            user-select: none;
+            flex-grow: 1;
+            justify-content: center;
+        }
+        
+        .device-item:hover { background: #e2e6f0; }
+        .device-item input[type="checkbox"] { transform: scale(1.3); cursor: pointer; accent-color: var(--success); }
+
+        /* Form Target Budget */
+        .budget-form { margin-bottom: 20px; }
+        label { font-weight: 700; display: block; margin-bottom: 8px; color: var(--dark); font-size: 0.95rem; }
+
+        input[type="number"] {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 2px solid #eaecf4;
+            font-size: 1.1rem;
+            font-family: inherit;
+            font-weight: 700;
+            color: var(--primary);
+            transition: border-color 0.3s;
+            background: #f8f9fc;
+            margin-bottom: 15px;
+        }
+        input[type="number"]:focus { outline: none; border-color: var(--primary); background: white; }
+
+        /* Desain Tombol Cerdas dengan Animasi Transisi */
+        .btn-smart {
+            width: 100%;
+            border: none;
+            border-radius: 12px;
+            padding: 15px 20px;
+            font-size: 1rem;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            background-color: var(--primary);
+            color: white;
+            transition: background-color 0.4s ease, transform 0.1s, opacity 0.3s ease;
+            box-shadow: 0 4px 6px rgba(44, 62, 80, 0.2);
+        }
+        .btn-smart:hover { background-color: #1a252f; transform: translateY(-2px); }
+        .btn-smart:active { transform: scale(0.98); }
+        .btn-smart:disabled { cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* Status Budget Area */
+        .budget-status {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 16px;
+            background: #f8f9fc;
+            border: 1px dashed #d1d3e2;
+        }
+
+        .status-chip {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            font-weight: 800;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .status-chip.safe { background: rgba(28, 200, 138, 0.15); color: #0f6848; border: 1px solid #c3e6cb; }
+        .status-chip.warn { background: rgba(246, 194, 62, 0.18); color: #856404; border: 1px solid #ffeeba; }
+
+        /* Grafik */
+        .card-chart { background: white; border-radius: 20px; box-shadow: var(--card-shadow); padding: 25px; }
+        .card-chart h3 { margin-top: 0; color: var(--primary); }
+        .chart-container { height: 300px; width: 100%; }
+        
+        .grid-charts {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .tab-nav {
+            width: 100%;
+            max-width: 1100px;
+            margin-bottom: 16px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            background: #e9edf3;
+            color: var(--primary);
+        }
+
+        .tab-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .hidden-tab {
+            display: none !important;
+        }
+
+        .eval-box {
+            margin-top: 16px;
+            background: #f8f9fc;
+            border: 1px solid #eaecf4;
+            border-radius: 12px;
+            padding: 12px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.85rem;
+            color: #4b5563;
+            max-height: 220px;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+
+        /* Responsif untuk HP */
+        @media (max-width: 850px) {
+            .grid-container { grid-template-columns: repeat(2, 1fr); }
+            .big-watt { font-size: 4rem; }
+            .control-panel, .ai-section { grid-template-columns: 1fr; }
+            .ai-section > div { border-left: none !important; padding-left: 0 !important; border-top: 1px solid #eee; padding-top: 15px; }
+            .ai-section > div:first-child { border-top: none; padding-top: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Smart Power Monitoring</h1>
+        <p>SARIMAX + Reinforcement Learning + Target Budget Bulanan</p>
+    </div>
+
+    <div class="tab-nav">
+        <button class="tab-btn active" id="tabLiveBtn" onclick="switchDashboardTab('live')">⚡ Tab Live Demo (Hardware)</button>
+        <button class="tab-btn" id="tabAiBtn" onclick="switchDashboardTab('ai')">🧠 Tab AI Analyzer (Skripsi)</button>
+    </div>
+
+    <div class="grid-container" data-tab-group="live">
+        <div class="card-small" style="border-bottom-color: var(--primary);"><h3>Tegangan</h3><span class="value" id="valVolt">0 V</span></div>
+        <div class="card-small" style="border-bottom-color: var(--success);"><h3>Arus</h3><span class="value" id="valArus">0 A</span></div>
+        <div class="card-small" style="border-bottom-color: #e67e22;"><h3>Total kWh</h3><span class="value" id="valEnergy">0.0000</span></div>
+        <div class="card-small" style="border-bottom-color: var(--info);"><h3>Suhu In</h3><span class="value" id="valSuhuIn">--°C</span></div>
+        <div class="card-small" style="border-bottom-color: var(--danger);"><h3>Suhu Out</h3><span class="value" id="valSuhuOut">--°C</span></div>
+    </div>
+
+    <div class="card-main">
+        <div data-tab-group="live">
+        <div id="valLastUpdate" style="font-size: 0.85rem; font-weight: 700; color: var(--success); margin-bottom: 5px; letter-spacing: 0.5px;">
+            🟢 Update Terakhir: --:--:-- WIB
+        </div>
+
+        <h3>Daya Aktif Saat Ini</h3>
+        <div class="big-watt"><span id="valDaya">0</span> W</div>
+
+        <div style="display: flex; justify-content: center; flex-wrap: wrap;">
+            <div class="cost-box">
+                <span style="font-size: 0.85rem; color: #a0a5b1; font-weight: 700; letter-spacing: 0.5px;">ESTIMASI BIAYA HARI INI</span>
+                <span id="valBiayaHariIni" style="color: var(--primary);">Rp 0</span>
+            </div>
+
+            <div class="saving-box">
+                <span style="font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px;">PENGHEMATAN VS RATA-RATA</span>
+                <span id="valSavingPct">0%</span>
+                <small id="valSavingNominal" style="font-weight: 600;">Rp 0 lebih hemat</small>
+            </div>
+        </div>
+
+        <div id="valDevice" class="device-tag">Menganalisa Beban...</div>
+        </div>
+
+        <div class="ai-section" data-tab-group="ai">
+            <div>
+                <div style="font-size:0.8rem; font-weight:800; color:#858796; letter-spacing: 0.5px;">PREDIKSI SARIMAX</div>
+                <div class="ai-val" id="valAi">0 W</div>
+                <small id="valDailyForecast" style="font-weight: 600; color: #a0a5b1;">Biaya prediksi harian: Rp 0</small>
+            </div>
+            <div style="border-left: 2px solid #eee; padding-left: 20px;">
+                <div style="font-size:0.8rem; font-weight:800; color:#858796; letter-spacing: 0.5px;">🤖 REKOMENDASI HEMAT RL</div>
+                <div class="ai-val" id="valRl" style="color: var(--success); font-size: 1.1rem; line-height: 1.4;">Stable</div>
+                <small id="valBudgetAdvice" style="font-weight: 600; color: #a0a5b1;">Menunggu analisis target budget...</small>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; border-top: 2px dashed #eee; padding-top: 18px; text-align: left;" data-tab-group="ai">
+            <div style="font-size:0.8rem; font-weight:800; color:#858796; letter-spacing: 0.5px; margin-bottom: 10px;">🧪 ANALIZER (PENGGUNAAN • PREDIKSI • KEPUTUSAN)</div>
+            <div class="summary-grid" style="gap: 10px;">
+                <div class="summary-item" style="padding: 12px;">
+                    <div>Penggunaan Aktif</div>
+                    <span class="value" id="valAnalyzerUsage" style="font-size:1rem;">Belum ada data</span>
+                </div>
+                <div class="summary-item" style="padding: 12px;">
+                    <div>Prediksi 24 Jam</div>
+                    <span class="value" id="valAnalyzerForecast" style="font-size:1rem;">Rp 0</span>
+                </div>
+                <div class="summary-item" style="padding: 12px;">
+                    <div>Keputusan AI</div>
+                    <span class="value" id="valAnalyzerDecision" style="font-size:1rem;">Menunggu keputusan</span>
+                </div>
+            </div>
+            <small id="valAnalyzerMeta" style="font-weight:600; color:#a0a5b1;">Model: -- | Action: -- | Update: --</small>
+        </div>
+    </div>
+
+    <div class="control-panel" data-tab-group="ai">
+        
+        <div class="device-card">
+            <div>
+                <h3>Konfirmasi Perangkat Aktif</h3>
+                <p>Centang perangkat yang sedang menyala di rumah agar rekomendasi AI (Reinforcement Learning) menjadi sangat presisi.</p>
+                
+                <div class="device-checklist">
+                    <label class="device-item"><input type="checkbox" id="chkAC"> AC</label>
+                    <label class="device-item"><input type="checkbox" id="chkMagicom"> Magicom</label>
+                    <label class="device-item"><input type="checkbox" id="chkWaterheater"> Water heater</label>
+                    <label class="device-item"><input type="checkbox" id="chkTV"> TV</label>
+                    <label class="device-item"><input type="checkbox" id="chkLaptop"> Laptop</label>
+                </div>
+            </div>
+            <button id="saveDeviceBtn" class="btn-smart">Kirim Status Perangkat</button>
+        </div>
+
+        <div class="budget-card">
+            <div>
+                <h3>Target Pengeluaran Bulanan</h3>
+                <p>Sistem AI akan memandu pemakaian harianmu agar tagihan akhir bulan tidak melebihi batas ini.</p>
+                
+                <div class="budget-form">
+                    <label for="monthlyBudgetInput">Target Rupiah (Rp)</label>
+                    <input id="monthlyBudgetInput" type="number" min="0" step="1000" placeholder="Contoh: 250000">
+                </div>
+            </div>
+
+            <button id="saveBudgetBtn" class="btn-smart">Simpan Target Bulanan</button>
+            
+            <div class="budget-status">
+                <span id="budgetStatusChip" class="status-chip safe">TARGET AMAN</span>
+                <div class="summary-grid" style="gap: 10px;">
+                    <div class="summary-item" style="padding: 10px;"><div>Proyeksi Akhir Bulan</div><span class="value" id="valMonthlyProjection" style="font-size:1rem;">Rp 0</span></div>
+                    <div class="summary-item" style="padding: 10px;"><div>Sisa Budget (Aman)</div><span class="value" id="valGapToTarget" style="font-size:1rem;">Rp 0</span></div>
+                </div>
+            </div>
+        </div>
+    </div> 
+
+    <div class="card-chart" data-tab-group="ai">
+        <h3>Visual Prediksi SARIMAX vs Aktual</h3>
+        <div class="chart-container"><canvas id="chartSarimax"></canvas></div>
+        <div style="margin-top: 14px;">
+            <div style="font-size:0.8rem; font-weight:800; color:#858796; letter-spacing:0.5px;">📊 EVALUASI MODEL SARIMAX (Firebase: <code>Evaluasi_Model_SARIMAX</code>)</div>
+            <div id="valSarimaxEval" class="eval-box">Menunggu data evaluasi model...</div>
+        </div>
+    </div>
+
+    <div class="card-chart" data-tab-group="live">
+        <h3>Tren Konsumsi Daya (Real-time Watt)</h3>
+        <div class="chart-container"><canvas id="chartWatt"></canvas></div>
+    </div>
+
+    <div class="grid-charts" data-tab-group="live">
+        <div class="card-chart">
+            <h3>Perbandingan Suhu (°C)</h3>
+            <div class="chart-container"><canvas id="chartSuhu"></canvas></div>
+        </div>
+        <div class="card-chart">
+            <h3>Konsumsi Energi Per Jam (Wh)</h3>
+            <div class="chart-container"><canvas id="chartJam"></canvas></div>
+        </div>
+        <div class="card-chart">
+            <h3>Total Penggunaan Harian (kWh)</h3>
+            <div class="chart-container"><canvas id="chartHarian"></canvas></div>
+        </div>
+    </div>
+
+<script>
+    // 1. Konfigurasi Firebase
+    const firebaseConfig = { 
+        databaseURL: "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app" 
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // 2. Setup Chart.js
+    Chart.defaults.font.family = "'Poppins', sans-serif";
+    const chartOptions = { responsive: true, maintainAspectRatio: false, animation: { duration: 1000 } };
+    const asNumber = (value, fallback = 0) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : fallback;
+    };
+    const currency = (value) => "Rp " + Number(value || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
+    const extractTimestamp = (item) => {
+        const candidates = [item?.waktu, item?.timeskip, item?.timestamp, item?.timeSkip];
+        for (const raw of candidates) {
+            const n = Number(raw);
+            if (Number.isFinite(n) && n > 0) return n;
+        }
+        return Date.now();
+    };
+
+    function switchDashboardTab(tab) {
+        const liveEls = document.querySelectorAll('[data-tab-group="live"]');
+        const aiEls = document.querySelectorAll('[data-tab-group="ai"]');
+        const liveBtn = document.getElementById('tabLiveBtn');
+        const aiBtn = document.getElementById('tabAiBtn');
+
+        if (tab === 'ai') {
+            liveEls.forEach((el) => el.classList.add('hidden-tab'));
+            aiEls.forEach((el) => el.classList.remove('hidden-tab'));
+            liveBtn.classList.remove('active');
+            aiBtn.classList.add('active');
+        } else {
+            aiEls.forEach((el) => el.classList.add('hidden-tab'));
+            liveEls.forEach((el) => el.classList.remove('hidden-tab'));
+            aiBtn.classList.remove('active');
+            liveBtn.classList.add('active');
+        }
+    }
+
+    // Variabel Global Real-time
+    let liveW = 0, liveSIn = 0, liveSOut = 27, livePredictedW = 0;
+
+    // Inisialisasi Grafik
+    const ctxWatt = new Chart(document.getElementById('chartWatt'), { type: 'line', data: { labels: [], datasets: [{ label: 'Watt', data: [], borderColor: '#2c3e50', fill: true, backgroundColor: 'rgba(44,62,80,0.05)', tension: 0.4 }]}, options: chartOptions });
+    const ctxSuhu = new Chart(document.getElementById('chartSuhu'), { type: 'line', data: { labels: [], datasets: [{ label: 'Indoor', borderColor: '#36b9cc', data: [] }, { label: 'Outdoor', borderColor: '#e74a3b', borderDash: [5,5], data: [] }]}, options: chartOptions });
+    const ctxJam = new Chart(document.getElementById('chartJam'), { type: 'bar', data: { labels: [], datasets: [{ label: 'Wh', backgroundColor: '#f6c23e', borderRadius: 4, data: [] }]}, options: chartOptions });
+    const ctxHarian = new Chart(document.getElementById('chartHarian'), { type: 'bar', data: { labels: [], datasets: [{ label: 'kWh', backgroundColor: '#1cc88a', borderRadius: 4, data: [] }]}, options: chartOptions });
+
+    // INISIALISASI GRAFIK BARU: SARIMAX
+    const ctxSarimax = new Chart(document.getElementById('chartSarimax'), {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: 'Aktual (W)', data: [], borderColor: '#2c3e50', backgroundColor: 'rgba(44,62,80,0.08)', tension: 0.3 },
+                { label: 'Prediksi SARIMAX (W)', data: [], borderColor: '#f6c23e', borderDash: [6, 4], tension: 0.3, spanGaps: true }
+            ]
+        },
+        options: chartOptions
+    });
+
+    // -------------------------------------------------------------------------
+    // PERBAIKAN REFRESH: Tarik Data History Agar Semua Grafik Tidak Kosong
+    // -------------------------------------------------------------------------
+    db.ref('history').limitToLast(15).once('value', (s) => {
+        const d = s.val(); if(!d) return;
+        
+        Object.keys(d).forEach(k => {
+            const item = d[k];
+            let timeStr = "";
+            
+            // Cek apakah ada waktu dari sensor (format Unix ms)
+            const ts = extractTimestamp(item);
+            timeStr = new Date(ts).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+            
+            // Masukkan data history ke dalam Array Grafik Watt & Suhu
+            ctxWatt.data.labels.push(timeStr);
+            ctxWatt.data.datasets[0].data.push(item.Daya || 0);
+            
+            ctxSuhu.data.labels.push(timeStr);
+            ctxSuhu.data.datasets[0].data.push(item.Suhu || 0);
+            ctxSuhu.data.datasets[1].data.push(liveSOut);
+
+            // Pre-fill SARIMAX Chart supaya tidak kosong saat di-refresh!
+            ctxSarimax.data.labels.push(timeStr);
+            ctxSarimax.data.datasets[0].data.push(item.Daya || 0); // Data Aktual
+            ctxSarimax.data.datasets[1].data.push(null);           // Data Prediksi Historis (biarkan null agar garis menyambung ke depan)
+        });
+        
+        ctxWatt.update();
+        ctxSuhu.update();
+        ctxSarimax.update();
+    });
+
+    // Tarik Data Monitoring (Realtime)
+    db.ref('Monitoring').on('value', (s) => {
+        const d = s.val(); if(!d) return;
+        liveW = d.Daya || 0; liveSIn = d.Suhu || 0;
+        
+        const nowStr = new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        document.getElementById('valLastUpdate').innerText = "🟢 Update Terakhir: " + nowStr + " WIB";
+
+        document.getElementById('valVolt').innerText = (d.Tegangan || 0).toFixed(1) + ' V';
+        document.getElementById('valArus').innerText = (d.Arus || 0).toFixed(3) + ' A';
+        document.getElementById('valEnergy').innerText = (d.Energy || 0).toFixed(4);
+        document.getElementById('valSuhuIn').innerText = liveSIn.toFixed(1) + '°C';
+        document.getElementById('valDaya').innerText = liveW.toFixed(1);
+
+        let dev = 'Standby (Aman)';
+        if (liveW > 300) dev = 'Beban Berat Aktif (AC/Pemanas)';
+        else if (liveW > 50) dev = 'Beban Menengah Aktif';
+        document.getElementById('valDevice').innerText = dev;
+    });
+
+    // Tarik Data History Biaya
+    db.ref('dashboard_info').on('value', (s) => {
+        const d = s.val(); if(!d) return;
+        document.getElementById('valBiayaHariIni').innerText = currency(d.biaya_hari_ini);
+        document.getElementById('valSavingPct').innerText = (d.hemat_hari_ini_pct || 0).toFixed(1) + '%';
+        document.getElementById('valSavingNominal').innerText = currency(d.hemat_hari_ini_rp) + ' lebih hemat';
+    });
+
+    db.ref('rekap_harian/history').limitToLast(7).on('value', (s) => {
+        const d = s.val(); if(!d) return;
+        ctxHarian.data.labels = Object.keys(d);
+        ctxHarian.data.datasets[0].data = Object.keys(d).map(k => d[k].penggunaan_kwh);
+        ctxHarian.update();
+    });
+
+    db.ref('Kwh_Jam').limitToLast(24).on('value', (s) => {
+        const d = s.val(); if(!d) return;
+        ctxJam.data.labels = Object.keys(d).map(k => d[k].jam + ':00');
+        ctxJam.data.datasets[0].data = Object.keys(d).map(k => d[k].wh_pakai);
+        ctxJam.update();
+    });
+
+    // Tarik Data Output AI (Sisi Kiri Dashboard)
+    function applyAiPayload(d) {
+        if (!d) return;
+
+        const predictedWatt = asNumber(d.prediksi_daya_selanjutnya ?? d.next_watt);
+        livePredictedW = predictedWatt; // Simpan nilai prediksi AI untuk digambar oleh loop 10-detik
+
+        document.getElementById('valAi').innerText = predictedWatt.toFixed(1) + ' W';
+        document.getElementById('valDailyForecast').innerText = 'Biaya prediksi harian: ' + currency(d.prediksi_biaya_harian_rp);
+        document.getElementById('valRl').innerText = d.rekomendasi_rl || d.advice || d.rekomendasi_ppo || 'Stable';
+        document.getElementById('valBudgetAdvice').innerText = d.rekomendasi_budget || 'Menunggu analisis...';
+        
+        document.getElementById('valMonthlyProjection').innerText = currency(d.proyeksi_bulanan_rp);
+        document.getElementById('valGapToTarget').innerText = currency(d.selisih_target_bulanan_rp);
+        
+        const suggestedBudget = asNumber(d.target_bulanan_rp, NaN);
+        if (Number.isFinite(suggestedBudget) && (!document.activeElement || document.activeElement.id !== 'monthlyBudgetInput')) {
+            document.getElementById('monthlyBudgetInput').value = suggestedBudget;
+        }
+
+        const chip = document.getElementById('budgetStatusChip');
+        if (d.status_target === 'on_track') {
+            chip.innerText = ' TARGET AMAN';
+            chip.className = 'status-chip safe';
+        } else {
+            chip.innerText = ' PERLU HEMAT';
+            chip.className = 'status-chip warn';
+        }
+
+        // ANALIZER BLOCK
+        const usageParts = [];
+        if (asNumber(d.biaya_hari_ini_rp) > 0) usageParts.push(`Biaya hari ini ${currency(d.biaya_hari_ini_rp)}`);
+        if (asNumber(d.rata_rata_biaya_harian_rp) > 0) usageParts.push(`Rata-rata ${currency(d.rata_rata_biaya_harian_rp)}`);
+        document.getElementById('valAnalyzerUsage').innerText = usageParts.join(' | ') || 'Belum ada data penggunaan';
+        document.getElementById('valAnalyzerForecast').innerText = `${currency(d.prediksi_biaya_harian_rp)} / hari`;
+        document.getElementById('valAnalyzerDecision').innerText = d.rekomendasi_ppo || d.rekomendasi_rl || 'Menunggu keputusan';
+        const modelType = d.sarimax_model_type || 'unknown';
+        const action = (d.rl_action === null || d.rl_action === undefined) ? 'rule-based' : `RL-${d.rl_action}`;
+        const updated = d.waktu_update || '--';
+        document.getElementById('valAnalyzerMeta').innerText = `Model: ${modelType} | Action: ${action} | Update: ${updated}`;
+    }
+
+    db.ref('Hasil_AI').on('value', (s) => {
+        applyAiPayload(s.val());
+    });
+
+    db.ref('Evaluasi_Model_SARIMAX').on('value', (s) => {
+        const d = s.val();
+        const target = document.getElementById('valSarimaxEval');
+        if (!d) {
+            target.innerText = 'Node Evaluasi_Model_SARIMAX belum ada data.';
+            return;
+        }
+        target.innerText = JSON.stringify(d, null, 2);
+    });
+
+    db.ref('user_preferences').on('value', (s) => {
+        const d = s.val(); if(!d) return;
+        if (!document.activeElement || document.activeElement.id !== 'monthlyBudgetInput') {
+            document.getElementById('monthlyBudgetInput').value = d.monthly_budget_rp || '';
+        }
+    });
+
+    db.ref('log_konfirmasi').limitToLast(1).on('value', (s) => {
+        const data = s.val(); if(!data) return;
+        const lastLog = data[Object.keys(data)[0]];
+        document.getElementById('chkAC').checked = !!lastLog.AC;
+        document.getElementById('chkMagicom').checked = !!lastLog.Magicom;
+        document.getElementById('chkWaterheater').checked = !!lastLog.Waterheater;
+        document.getElementById('chkTV').checked = !!lastLog.TV;
+        document.getElementById('chkLaptop').checked = !!lastLog.Laptop;
+    });
+
+    // FUNGSI ANIMASI TOMBOL CERDAS
+    async function executeSmartButton(btnId, savingText, successText, dbActionCallback) {
+        const btn = document.getElementById(btnId);
+        const originalText = btn.innerText;
+
+        btn.innerText = "⏳ " + savingText;
+        btn.style.opacity = "0.7";
+        btn.disabled = true;
+
+        try {
+            await dbActionCallback();
+            btn.innerText = "✅ " + successText;
+            btn.style.backgroundColor = "var(--success)";
+            btn.style.opacity = "1";
+        } catch (error) {
+            btn.innerText = "❌ Gagal Menyimpan";
+            btn.style.backgroundColor = "var(--danger)";
+        } finally {
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.style.backgroundColor = ""; 
+                btn.disabled = false;
+            }, 2500);
+        }
+    }
+
+    document.getElementById('saveBudgetBtn').addEventListener('click', () => {
+        const budgetValue = Number(document.getElementById('monthlyBudgetInput').value || 0);
+        if (budgetValue <= 0) return; 
+
+        executeSmartButton('saveBudgetBtn', 'Menyimpan...', 'Tersimpan!', async () => {
+            await db.ref('user_preferences').update({
+                monthly_budget_rp: budgetValue,
+                updated_at: new Date().toISOString()
+            });
+        });
+    });
+
+    document.getElementById('saveDeviceBtn').addEventListener('click', () => {
+        executeSmartButton('saveDeviceBtn', 'Mengirim...', 'Terkirim ke AI!', async () => {
+            await db.ref('log_konfirmasi').push({
+                waktu: new Date().toISOString(),
+                AC: document.getElementById('chkAC').checked ? 1 : 0,
+                Magicom: document.getElementById('chkMagicom').checked ? 1 : 0,
+                Waterheater: document.getElementById('chkWaterheater').checked ? 1 : 0,
+                TV: document.getElementById('chkTV').checked ? 1 : 0,
+                Laptop: document.getElementById('chkLaptop').checked ? 1 : 0
+            });
+        });
+    });
+
+    async function getOutTemp() {
+        try {
+            const res = await fetch('https://api.openweathermap.org/data/2.5/weather?q=Purwokerto&appid=beefa531dea387fcb2f8ee59a46d472c&units=metric');
+            const data = await res.json();
+            if(data.main) { liveSOut = data.main.temp; document.getElementById('valSuhuOut').innerText = liveSOut.toFixed(1) + '°C'; }
+        } catch (e) {}
+    }
+    getOutTemp();
+
+    // -------------------------------------------------------------------------
+    // PERBAIKAN REFRESH: Loop Chart 10 Detik Termasuk Grafik SARIMAX!
+    // -------------------------------------------------------------------------
+    setInterval(() => {
+        const now = new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        
+        // Update Chart Watt
+        ctxWatt.data.labels.push(now); ctxWatt.data.datasets[0].data.push(liveW);
+        if (ctxWatt.data.labels.length > 15) { ctxWatt.data.labels.shift(); ctxWatt.data.datasets[0].data.shift(); }
+        ctxWatt.update('none');
+
+        // Update Chart Suhu
+        ctxSuhu.data.labels.push(now); ctxSuhu.data.datasets[0].data.push(liveSIn); ctxSuhu.data.datasets[1].data.push(liveSOut);
+        if (ctxSuhu.data.labels.length > 15) { ctxSuhu.data.labels.shift(); ctxSuhu.data.datasets[0].data.shift(); ctxSuhu.data.datasets[1].data.shift(); }
+        ctxSuhu.update('none');
+
+        // Update Chart SARIMAX secara Real-time!
+        ctxSarimax.data.labels.push(now);
+        ctxSarimax.data.datasets[0].data.push(liveW);           // Garis Biru: Watt Aktual yang naik turun
+        ctxSarimax.data.datasets[1].data.push(livePredictedW);  // Garis Kuning: Target Prediksi AI yang mendatar
+        if (ctxSarimax.data.labels.length > 15) {
+            ctxSarimax.data.labels.shift();
+            ctxSarimax.data.datasets[0].data.shift();
+            ctxSarimax.data.datasets[1].data.shift();
+        }
+        ctxSarimax.update('none');
+
+    }, 10000);
+
+    // Default tampilan awal untuk presentasi: Live Demo
+    switchDashboardTab('live');
+</script>
+</body>
+</html>

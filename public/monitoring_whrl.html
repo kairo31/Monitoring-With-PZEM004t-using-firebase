@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Monitoring</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body{font-family:Poppins,sans-serif;background:#f8f9fc;margin:0;padding:20px;color:#1f2937}
+    .wrap{max-width:1000px;margin:0 auto}
+    .header,.card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 8px 20px rgba(0,0,0,.05)}
+    .header{padding:18px;margin-bottom:14px}.card{padding:16px;margin-bottom:14px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+    .kpi{padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fafafa}
+    .kpi .v{font-size:1.3rem;font-weight:800;color:#2c3e50}
+    .chart{height:280px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h2 style="margin:0">Live Monitoring Basic</h2>
+    <div id="lastUpdate" style="color:#6b7280">Update terakhir: --</div>
+  </div>
+
+  <div class="card grid">
+    <div class="kpi"><div>Tegangan</div><div class="v" id="volt">0 V</div></div>
+    <div class="kpi"><div>Arus</div><div class="v" id="arus">0 A</div></div>
+    <div class="kpi"><div>Daya</div><div class="v" id="daya">0 W</div></div>
+    <div class="kpi"><div>Energi Total</div><div class="v" id="energy">0 kWh</div></div>
+    <div class="kpi"><div>Suhu</div><div class="v" id="suhu">0 °C</div></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Grafik Daya Real-time</h3>
+    <div class="chart"><canvas id="chartW"></canvas></div>
+  </div>
+</div>
+
+<script>
+const firebaseConfig = { databaseURL: "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app" };
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const ctx = new Chart(document.getElementById('chartW'), {
+  type: 'line',
+  data: { labels: [], datasets: [{ label: 'Daya (W)', data: [], borderColor: '#2563eb', tension: 0.35 }] },
+  options: { responsive: true, maintainAspectRatio: false }
+});
+
+function pushChart(x,y){
+  ctx.data.labels.push(x); ctx.data.datasets[0].data.push(y);
+  if(ctx.data.labels.length>25){ctx.data.labels.shift(); ctx.data.datasets[0].data.shift();}
+  ctx.update('none');
+}
+
+db.ref('Monitoring').on('value', (s)=>{
+  const d = s.val(); if(!d) return;
+  const t = new Date().toLocaleTimeString('id-ID');
+  document.getElementById('lastUpdate').innerText = 'Update terakhir: ' + t;
+  document.getElementById('volt').innerText = Number(d.Tegangan||0).toFixed(1) + ' V';
+  document.getElementById('arus').innerText = Number(d.Arus||0).toFixed(3) + ' A';
+  document.getElementById('daya').innerText = Number(d.Daya||0).toFixed(1) + ' W';
+  document.getElementById('energy').innerText = Number(d.Energy||0).toFixed(4) + ' kWh';
+  document.getElementById('suhu').innerText = Number(d.Suhu||0).toFixed(1) + ' °C';
+  pushChart(t, Number(d.Daya||0));
+});
+</script>
+</body>
+</html>
