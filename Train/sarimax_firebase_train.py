@@ -1,6 +1,3 @@
-!pip install pmdarima
-!pip uninstall gym -y
-
 import os
 import sys
 import subprocess
