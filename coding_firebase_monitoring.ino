@@ -7,7 +7,7 @@
 WiFiMulti wifiMulti;
 
 // --- 1. KONFIGURASI SENSOR ---
-#define DHTPIN 4
+#define DHTPIN 26
 #define DHTTYPE DHT22  
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -15,8 +15,8 @@ DHT dht(DHTPIN, DHTTYPE);
 PZEM004Tv30 pzem(Serial2, 16, 17);
 
 // --- 2. KONFIGURASI FIREBASE ---
-#define FIREBASE_HOST "ISI SENDIRI"
-#define FIREBASE_AUTH "ISI SENDIRI" 
+#define FIREBASE_HOST "test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app"
+#define FIREBASE_AUTH "AIzaSyCf7K96qmZMSzkkd2XQTPvmx2CGlw7PNTY" // Catatan: Sebaiknya pakai Database Secret (40 karakter) agar lebih stabil
 
 FirebaseData fbdo;
 FirebaseAuth auth;
@@ -29,11 +29,11 @@ void setup() {
   
   dht.begin();
 
-  // Koneksi WiFi 
-  wifiMulti.addAP("NAMA WIFI", "PW");
-  wifiMulti.addAP("NAMA WIFI2", "PW2");
-  wifiMulti.addAP("NAMA WIFI3", "PW3");
-  //DST
+  // Koneksi WiFi
+  wifiMulti.addAP("ppp", "yudistira");
+  wifiMulti.addAP("fh_ea0ad0", "wlan15f52f");
+  wifiMulti.addAP("Andykh1", "12maret11");
+  wifiMulti.addAP("Andykh2", "12maret11");
 
   Serial.print("Menghubungkan WiFi...");
   while (wifiMulti.run() != WL_CONNECTED) {
@@ -52,9 +52,9 @@ void setup() {
 
 void loop() {
   if (wifiMulti.run() == WL_CONNECTED) {
-    // A. BACA SENSOR (Arus sudah ditambahkan)
+    // A. BACA SENSOR
     float v = pzem.voltage();
-    float i = pzem.current(); // Ini dia yang tadi ilang!
+    float i = pzem.current(); 
     float p = pzem.power();
     float e = pzem.energy();
     float h = dht.readHumidity();
@@ -73,7 +73,8 @@ void loop() {
       live.set("Kelembapan", h);
       Firebase.setJSON(fbdo, "/Monitoring", live);
 
-     if (millis() - lastHistoryMillis >= 60000) {
+      // C. SIMPAN KE HISTORY (SETIAP 1 MENIT)
+      if (millis() - lastHistoryMillis >= 60000) {
         FirebaseJson hist;
         hist.set("Tegangan", v); 
         hist.set("Arus", i);   
@@ -86,7 +87,7 @@ void loop() {
         
         Serial.print("Pushing data ke history... ");
         if (Firebase.pushJSON(fbdo, "/history", hist)) {
-          Serial.println("BERHASIL!");
+          Serial.println("✅ OK");
           lastHistoryMillis = millis();
         } else {
           Serial.println("❌ GAGAL: " + fbdo.errorReason());
