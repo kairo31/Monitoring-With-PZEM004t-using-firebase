@@ -66,24 +66,27 @@ void loop() {
       // B. UPDATE MONITORING (DASHBOARD LIVE)
       FirebaseJson live;
       live.set("Tegangan", v);
-      live.set("Arus", i);    // Update Arus ke dashboard
+      live.set("Arus", i);    
       live.set("Daya", p);
       live.set("Energy", e);
       live.set("Suhu", t);
       live.set("Kelembapan", h);
       Firebase.setJSON(fbdo, "/Monitoring", live);
 
-      // C. SIMPAN KE HISTORY (SETIAP 1 MENIT)
-      if (millis() - lastHistoryMillis >= 60000) {
+     if (millis() - lastHistoryMillis >= 60000) {
         FirebaseJson hist;
-        hist.set("Arus", i);   // Simpan Arus ke history juga
+        hist.set("Tegangan", v); 
+        hist.set("Arus", i);   
         hist.set("Daya", p);   
         hist.set("Suhu", t);   
         hist.set("Energy", e); 
         
+        // Meminta Firebase untuk mencatat waktu saat ini (Timestamp)
+        hist.set("waktu/.sv", "timestamp"); 
+        
         Serial.print("Pushing data ke history... ");
         if (Firebase.pushJSON(fbdo, "/history", hist)) {
-          Serial.println("✅ BERHASIL!");
+          Serial.println("BERHASIL!");
           lastHistoryMillis = millis();
         } else {
           Serial.println("❌ GAGAL: " + fbdo.errorReason());
