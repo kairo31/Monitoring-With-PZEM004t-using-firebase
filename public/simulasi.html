@@ -3,330 +3,474 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Simulator Alur Sistem - Smart Power Monitoring</title>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <title>Simulator Sistem Monitoring Energi — PZEM004t + AI</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #050505;
-      --panel: #ffffff;
-      --ink: #111111;
-      --muted: #444444;
-      --line: #ffffff;
-      --accent: #1cc88a;
       --primary: #2c3e50;
+      --accent: #6366f1;
+      --success: #1cc88a;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --bg: #f8f9fc;
+      --card: #ffffff;
+      --border: #e5e7eb;
+      --muted: #6b7280;
+      --shadow: 0 10px 30px rgba(0,0,0,.07);
     }
-
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0;
-      min-height: 100vh;
-      background: var(--bg);
-      color: var(--panel);
       font-family: Poppins, sans-serif;
-      padding: 22px;
+      background: var(--bg);
+      color: #1f2937;
+      min-height: 100vh;
     }
 
-    .page-shell {
-      width: min(1180px, 100%);
-      margin: 0 auto;
+    /* ── Header ── */
+    .page-header {
+      background: var(--primary);
+      color: #fff;
+      padding: 28px 32px 24px;
+    }
+    .page-header h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: 4px; }
+    .page-header p  { font-size: .9rem; opacity: .75; max-width: 640px; line-height: 1.5; }
+    .badge-chip {
+      display: inline-block; margin-top: 10px; padding: 4px 12px;
+      background: rgba(255,255,255,.15); border-radius: 999px;
+      font-size: .75rem; font-weight: 700; letter-spacing: .4px;
     }
 
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      align-items: center;
-      margin-bottom: 18px;
+    /* ── Layout ── */
+    .page-body { max-width: 900px; margin: 0 auto; padding: 28px 20px 48px; }
+    .section-title {
+      font-size: .75rem; font-weight: 800; letter-spacing: .8px;
+      color: var(--muted); text-transform: uppercase; margin-bottom: 14px;
     }
 
-    .topbar h1 {
-      margin: 0;
-      font-size: clamp(1.4rem, 3vw, 2.1rem);
-      font-weight: 800;
+    /* ── Card ── */
+    .card {
+      background: var(--card); border-radius: 16px;
+      box-shadow: var(--shadow); border: 1px solid var(--border);
+      padding: 22px 24px; margin-bottom: 20px;
     }
+    .card h2 { font-size: 1rem; color: var(--primary); margin-bottom: 6px; }
+    .card .sub { font-size: .85rem; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
 
-    .topbar p {
-      margin: 4px 0 0;
-      color: #d1d5db;
-      font-size: .95rem;
+    /* ── Simulator steps ── */
+    .prog-wrap { height: 6px; background: var(--border); border-radius: 3px; margin-bottom: 20px; }
+    .prog-bar   { height: 6px; border-radius: 3px; background: var(--accent); transition: width .4s ease; }
+    .step-meta  { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+
+    .sim-step {
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px 16px; margin-bottom: 10px; transition: all .25s;
     }
+    .sim-step.idle   { opacity: .4; }
+    .sim-step.active { border-color: var(--accent); background: #eef2ff; }
+    .sim-step.done   { border-color: var(--success); background: #f0fdf4; }
 
-    .nav-actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
+    .step-hdr  { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+    .step-dot  {
+      width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; border: 1px solid var(--border);
+      background: #f3f4f6; color: var(--muted); transition: all .25s;
     }
+    .sim-step.active .step-dot { background: #fff; color: var(--accent); border-color: var(--accent); }
+    .sim-step.done   .step-dot { background: var(--success); color: #fff; border-color: var(--success); }
 
-    .link-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 10px 14px;
-      border-radius: 12px;
-      text-decoration: none;
-      font-weight: 800;
-      background: var(--panel);
-      color: var(--ink);
-      border: 2px solid var(--panel);
+    .step-name { font-weight: 700; font-size: 13.5px; color: var(--primary); }
+    .step-body { font-size: 13px; color: var(--muted); line-height: 1.6; }
+    .sim-step.active .step-body { color: #374151; }
+
+    .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .pill {
+      font-size: 11.5px; padding: 3px 10px; border-radius: 20px;
+      background: #f3f4f6; border: 1px solid var(--border); color: var(--muted);
+      font-family: 'Courier New', monospace;
     }
+    .sim-step.active .pill { background: #fff; border-color: var(--accent); color: #4338ca; }
+    .sim-step.done   .pill { border-color: var(--success); color: #166534; }
 
-    .link-btn.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #06281d;
+    .rl-badge {
+      display: inline-block; font-size: 12px; font-weight: 700;
+      padding: 4px 14px; border-radius: 20px; margin-top: 8px;
     }
+    .rl-warn { background: #fefce8; color: #854d0e; border: 1px solid #fde68a; }
+    .rl-ok   { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
 
-    .diagram-wrap {
-      width: 100%;
-      overflow-x: auto;
-      padding-bottom: 10px;
+    .btn-row { display: flex; gap: 10px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+    .btn-primary {
+      padding: 11px 20px; border: none; border-radius: 10px;
+      background: var(--accent); color: #fff; font-family: Poppins, sans-serif;
+      font-weight: 700; font-size: 13px; cursor: pointer; transition: opacity .2s;
     }
-
-    .diagram-canvas {
-      position: relative;
-      min-width: 980px;
-      height: 620px;
-      background: #000;
-      border: 1px solid #1f2937;
-      border-radius: 18px;
-      box-shadow: 0 18px 45px rgba(0,0,0,.38);
-      overflow: hidden;
+    .btn-primary:hover { opacity: .88; }
+    .btn-primary:disabled { opacity: .4; cursor: default; }
+    .btn-ghost {
+      padding: 11px 20px; border: 1px solid var(--border); border-radius: 10px;
+      background: #fff; color: #374151; font-family: Poppins, sans-serif;
+      font-weight: 700; font-size: 13px; cursor: pointer; transition: all .2s;
     }
+    .btn-ghost:hover { background: #f3f4f6; }
+    .sim-msg { font-size: 12.5px; color: var(--muted); }
 
-    .node {
-      position: absolute;
-      background: var(--panel);
-      color: var(--ink);
-      border: 2px solid #f3f4f6;
-      box-shadow: 0 8px 0 rgba(255,255,255,.04);
-      z-index: 2;
+    /* ── Device calculator ── */
+    .dev-grid { display: grid; grid-template-columns: 1fr 120px; gap: 10px 14px; align-items: center; margin-bottom: 16px; }
+    .dev-label { font-size: 13px; }
+    .dev-label span { color: var(--muted); font-size: 11px; }
+    input[type=number] {
+      width: 100%; padding: 9px 12px; border: 1px solid var(--border);
+      border-radius: 10px; font-family: Poppins, sans-serif; font-size: 13px;
+      outline: none; transition: border-color .2s;
     }
+    input[type=number]:focus { border-color: var(--accent); }
 
-    .box {
-      min-width: 150px;
-      min-height: 70px;
-      padding: 18px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      font-size: 1.15rem;
-      line-height: 1.25;
+    .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 14px; }
+    @media (max-width: 500px) { .kpi-grid { grid-template-columns: 1fr; } }
+    .kpi-box {
+      background: #f9fafb; border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px;
     }
+    .kpi-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .kpi-value { font-size: 1.1rem; font-weight: 700; color: var(--primary); }
 
-    .box.small { min-width: 138px; min-height: 68px; }
-    .box.wide { min-width: 210px; }
-    .box.tall { min-width: 218px; min-height: 106px; }
-
-    .firebase {
-      left: 345px;
-      top: 235px;
-      width: 340px;
-      min-height: 215px;
-      padding: 26px 22px 20px;
+    .result-box {
+      margin-top: 14px; padding: 14px 16px; border-radius: 12px;
+      background: #f3f4f6; border: 1px solid var(--border);
+      font-size: .9rem; line-height: 1.6;
     }
-
-    .firebase h2 {
-      margin: 0 0 18px;
-      font-size: 2rem;
-      font-weight: 500;
-      text-align: center;
+    .tag {
+      display: inline-block; padding: 3px 12px; border-radius: 999px;
+      font-size: .75rem; font-weight: 800; margin-bottom: 10px;
     }
+    .tag-purple { background: #eef2ff; color: #3730a3; }
+    .tag-green  { background: #f0fdf4; color: #166534; }
+    .tag-amber  { background: #fefce8; color: #854d0e; }
 
-    .firebase-lists {
+    /* ── Architecture key ── */
+    .arch-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
-      font-size: .88rem;
-      line-height: 1.2;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px; margin-top: 4px;
+    }
+    .arch-node {
+      border-radius: 12px; padding: 14px;
+      text-align: center; border: 1.5px solid transparent;
+    }
+    .arch-node .icon { font-size: 1.6rem; margin-bottom: 6px; }
+    .arch-node .node-name { font-weight: 700; font-size: 13px; color: var(--primary); }
+    .arch-node .node-desc { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+    .n-hw   { background: #fff7ed; border-color: #fed7aa; }
+    .n-fb   { background: #fef3c7; border-color: #fde68a; }
+    .n-ci   { background: #ede9fe; border-color: #c4b5fd; }
+    .n-ai   { background: #ecfdf5; border-color: #a7f3d0; }
+    .n-dash { background: #eff6ff; border-color: #bfdbfe; }
+    .arch-arrow {
+      text-align: center; font-size: 1.3rem; color: var(--muted);
+      margin: 4px 0; line-height: 1;
     }
 
-    .firebase ul,
-    .cloud ul {
-      margin: 0;
-      padding-left: 18px;
-    }
-
-    .cloud {
-      right: 66px;
-      top: 28px;
-      width: 170px;
-      height: 132px;
-      border-radius: 48% 52% 45% 55% / 55% 45% 55% 45%;
-      padding: 38px 22px 18px;
-      text-align: center;
-    }
-
-    .cloud::before,
-    .cloud::after {
-      content: "";
-      position: absolute;
-      background: var(--panel);
-      border-radius: 50%;
-      z-index: -1;
-    }
-
-    .cloud::before {
-      width: 78px;
-      height: 78px;
-      left: 28px;
-      top: -25px;
-    }
-
-    .cloud::after {
-      width: 70px;
-      height: 70px;
-      right: 8px;
-      top: -10px;
-    }
-
-    .cloud h2 {
-      margin: 0 0 12px;
-      font-size: 1.28rem;
-      font-weight: 500;
-    }
-
-    .cloud ul {
-      text-align: left;
-      font-size: .72rem;
-      line-height: 1.22;
-    }
-
-    .beban { left: 36px; top: 120px; }
-    .esp { left: 28px; top: 260px; }
-    .vscode { left: 52px; top: 392px; }
-    .github { left: 438px; top: 54px; }
-    .colab { right: 42px; top: 310px; }
-    .dashboard { left: 438px; bottom: 44px; }
-
-    .arrow-layer {
-      position: absolute;
-      inset: 0;
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    .legend {
-      margin-top: 14px;
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .legend-card {
-      background: #111827;
-      border: 1px solid #374151;
-      border-radius: 14px;
-      padding: 14px;
-      color: #f9fafb;
-    }
-
-    .legend-card strong {
-      display: block;
-      margin-bottom: 6px;
-      color: #ffffff;
-    }
-
-    .legend-card span {
-      color: #d1d5db;
-      font-size: .9rem;
-      line-height: 1.45;
-    }
-
-    @media (max-width: 760px) {
-      body { padding: 14px; }
-      .topbar { align-items: flex-start; flex-direction: column; }
-      .nav-actions { justify-content: flex-start; }
-      .legend { grid-template-columns: 1fr; }
+    /* ── Footer ── */
+    .footer {
+      text-align: center; font-size: 12px; color: var(--muted);
+      margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border);
     }
   </style>
 </head>
 <body>
-  <main class="page-shell">
-    <header class="topbar">
-      <div>
-        <h1>Simulator Alur Sistem</h1>
-        <p>Visual alur seperti sketsa: beban listrik → ESP32/PZEM → Firebase → Colab/GitHub/Drive → Dashboard.</p>
+
+<div class="page-header">
+  <h1>Simulator Sistem Monitoring Energi</h1>
+  <p>Demonstrasi interaktif bagaimana sensor PZEM004t, Firebase, GitHub Actions, SARIMAX, dan RL Agent bekerja bersama untuk memonitor dan menghemat energi rumah tangga.</p>
+  <div class="badge-chip">Tanpa live sensor — 100% simulasi</div>
+</div>
+
+<div class="page-body">
+
+  <!-- ARCHITECTURE OVERVIEW -->
+  <div class="section-title">Gambaran Arsitektur Sistem</div>
+  <div class="card" style="padding-bottom:18px">
+    <div class="arch-grid">
+      <div class="arch-node n-hw">
+        <div class="icon">🔌</div>
+        <div class="node-name">Hardware</div>
+        <div class="node-desc">ESP32 + PZEM004t + DHT22<br>Baca sensor tiap 2 detik</div>
       </div>
-      <nav class="nav-actions" aria-label="Navigasi halaman">
-        <a class="link-btn primary" href="demo.html">🎓 Demo</a>
-        <a class="link-btn" href="monitoring.html">⚡ Monitoring</a>
-        <a class="link-btn" href="index.html">🏠 Portal</a>
-      </nav>
-    </header>
-
-    <section class="diagram-wrap" aria-label="Diagram alur sistem monitoring listrik">
-      <div class="diagram-canvas">
-        <svg class="arrow-layer" viewBox="0 0 980 620" preserveAspectRatio="none" aria-hidden="true">
-          <defs>
-            <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-              <path d="M0,0 L0,6 L9,3 z" fill="#ffffff" />
-            </marker>
-          </defs>
-          <path d="M190 295 L345 325" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
-          <path d="M125 190 L125 260" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
-          <path d="M142 392 L142 366" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
-          <path d="M345 280 L540 125" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
-          <path d="M585 235 L785 130" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
-          <path d="M685 340 L822 340" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
-          <path d="M515 450 L515 548" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
-          <path d="M825 390 L675 430" stroke="#ffffff" stroke-width="2" marker-end="url(#arrow)" />
-        </svg>
-
-        <div class="node box small beban">Beban Listrik</div>
-        <div class="node box tall esp">ESP32 + Pzem004T<br><span style="font-size:.94rem;">(Coded in Arduino IDE)</span></div>
-        <div class="node box vscode">Visual Studio<br>Code</div>
-        <div class="node box github">Github</div>
-
-        <div class="node cloud">
-          <h2>Google Drive</h2>
-          <ul>
-            <li>Model SARIMAX (.pkl)</li>
-            <li>Model RL (.zip)</li>
-          </ul>
-        </div>
-
-        <div class="node firebase">
-          <h2>Firebase</h2>
-          <div class="firebase-lists">
-            <ul>
-              <li>Hasil AI</li>
-              <li>Kwh harian</li>
-              <li>Monitoring</li>
-              <li>Dashboard info</li>
-              <li>Histori</li>
-            </ul>
-            <ul>
-              <li>Log konfirmasi</li>
-              <li>Rekap harian</li>
-              <li>User confirmation</li>
-              <li>User preference</li>
-              <li>Evaluasi model SARIMAX</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="node box small colab">Google<br>Colab</div>
-        <div class="node box wide dashboard">Dashboard</div>
+      <div class="arch-node n-fb">
+        <div class="icon">🔥</div>
+        <div class="node-name">Firebase</div>
+        <div class="node-desc">/Monitoring · /history<br>/rekap_harian · /Hasil_AI</div>
       </div>
-    </section>
+      <div class="arch-node n-ci">
+        <div class="icon">⚙️</div>
+        <div class="node-name">GitHub Actions</div>
+        <div class="node-desc">Cron tiap 15 menit<br>Jalankan pipeline AI</div>
+      </div>
+      <div class="arch-node n-ai">
+        <div class="icon">🤖</div>
+        <div class="node-name">AI Pipeline</div>
+        <div class="node-desc">SARIMAX forecast<br>+ PPO RL agent</div>
+      </div>
+      <div class="arch-node n-dash">
+        <div class="icon">📊</div>
+        <div class="node-name">Dashboard</div>
+        <div class="node-desc">Visualisasi live<br>+ rekomendasi hemat</div>
+      </div>
+    </div>
+    <div class="arch-arrow" style="margin-top:12px">Hardware → Firebase → GitHub Actions → AI → Firebase → Dashboard</div>
+  </div>
 
-    <section class="legend" aria-label="Keterangan alur">
-      <article class="legend-card">
-        <strong>Receive dari hardware</strong>
-        <span>Beban listrik dibaca PZEM004T, ESP32 text data ke Firebase pada node Monitoring/Histori.</span>
-      </article>
-      <article class="legend-card">
-        <strong>Receive + text model</strong>
-        <span>Google Colab/GitHub/Drive menyimpan kode dan model, lalu text hasil AI/evaluasi kembali ke Firebase.</span>
-      </article>
-      <article class="legend-card">
-        <strong>Receive ke dashboard</strong>
-        <span>Dashboard dan demo hanya receive node Firebase untuk menampilkan monitoring, histori, rekomendasi, dan evaluasi.</span>
-      </article>
-    </section>
-  </main>
+  <!-- STEP-BY-STEP SIMULATOR -->
+  <div class="section-title">Simulasi Alur Sistem (Langkah Demi Langkah)</div>
+  <div class="card">
+    <h2>Ikuti data dari sensor sampai ke rekomendasi AI</h2>
+    <p class="sub">Tekan "Langkah Berikutnya" untuk melihat apa yang terjadi di setiap tahap. Setiap siklus menggunakan data sensor acak yang baru.</p>
+
+    <div class="step-meta">
+      <span>Progres simulasi satu siklus</span>
+      <span id="stepLabel">Langkah 0 dari 6</span>
+    </div>
+    <div class="prog-wrap"><div class="prog-bar" id="progBar" style="width:0%"></div></div>
+
+    <div id="step0" class="sim-step active">
+      <div class="step-hdr"><div class="step-dot" id="dot0">1</div><div class="step-name">🔌 ESP32 membaca sensor</div></div>
+      <div class="step-body">ESP32 membaca PZEM004t (tegangan, arus, daya, energi) via Serial2 dan DHT22 (suhu) via pin 4. Loop ini berjalan terus-menerus setiap <strong>2 detik</strong>.
+        <div class="pills" id="pills0">
+          <span class="pill">Tegangan: — V</span><span class="pill">Arus: — A</span><span class="pill">Daya: — W</span><span class="pill">Suhu: — °C</span><span class="pill">kWh: —</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="step1" class="sim-step idle">
+      <div class="step-hdr"><div class="step-dot" id="dot1">2</div><div class="step-name">🔥 Push ke Firebase Realtime Database</div></div>
+      <div class="step-body">ESP32 menulis data ke <code>/Monitoring</code> setiap 2 detik (dashboard live) dan menambahkan record ke <code>/history</code> setiap 60 detik sebagai data latih AI.
+        <div class="pills" id="pills1">
+          <span class="pill">/Monitoring ← data live</span><span class="pill">/history ← tiap 60 detik</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="step2" class="sim-step idle">
+      <div class="step-hdr"><div class="step-dot" id="dot2">3</div><div class="step-name">⚙️ GitHub Actions cron aktif</div></div>
+      <div class="step-body">Setiap <strong>15 menit</strong>, GitHub Actions otomatis berjalan. Ia mengunduh model AI dari Google Drive (atau cache) lalu menjalankan skrip rekap harian dan inferensi AI.
+        <div class="pills" id="pills2">
+          <span class="pill">Cron: */15 * * * *</span><span class="pill">sarimax_bundle.pkl</span><span class="pill">model_rl_budget.zip</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="step3" class="sim-step idle">
+      <div class="step-hdr"><div class="step-dot" id="dot3">4</div><div class="step-name">📈 SARIMAX meramalkan daya</div></div>
+      <div class="step-body">Model SARIMAX membaca data historis + status perangkat sebagai variabel eksogen, lalu memprediksi <strong>6 langkah ke depan</strong>. Hasil mentah disanitasi: nilai negatif dibuang, outlier diperhalus dengan blending 70% daya sekarang + 30% prediksi.
+        <div class="pills" id="pills3">
+          <span class="pill">Forecast mentah: — W</span><span class="pill">Setelah sanitasi: — W</span><span class="pill">6-step: —</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="step4" class="sim-step idle">
+      <div class="step-hdr"><div class="step-dot" id="dot4">5</div><div class="step-name">🤖 Agen RL (PPO) memilih aksi</div></div>
+      <div class="step-body">Agen PPO menerima state 15-dimensi: daya aktual, suhu, flag perangkat aktif (AC/TV/dll), jam, hari, status peak hour, progres bulan, gap budget, dan forecast SARIMAX. Output: satu dari 5 aksi penghematan.
+        <div class="pills" id="pills4">
+          <span class="pill">Dimensi state: 15</span><span class="pill">Aksi: —</span><span class="pill">Gap budget: — Rp</span>
+        </div>
+        <div id="rlBadge"></div>
+      </div>
+    </div>
+
+    <div id="step5" class="sim-step idle">
+      <div class="step-hdr"><div class="step-dot" id="dot5">6</div><div class="step-name">📊 Hasil → Firebase → Dashboard</div></div>
+      <div class="step-body">Semua output AI ditulis ke <code>/Hasil_AI</code>. Dashboard membacanya secara realtime dan menampilkan prediksi watt, rekomendasi RL, proyeksi biaya bulanan, dan badge penghematan.
+        <div class="pills" id="pills5">
+          <span class="pill">Prediksi biaya harian: — Rp</span><span class="pill">Status: —</span><span class="pill">Badge: —</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-primary" id="btnNext" onclick="simNext()">Langkah Berikutnya →</button>
+      <button class="btn-ghost" id="btnReset" onclick="simReset()" style="opacity:.5">↺ Ulangi dengan data baru</button>
+      <span class="sim-msg" id="simMsg"></span>
+    </div>
+  </div>
+
+  <!-- DEVICE CALCULATOR -->
+  <div class="section-title">Kalkulator Prediksi Biaya Perangkat</div>
+  <div class="card">
+    <h2>Simulasi Komposisi Perangkat → Prediksi Konsumsi &amp; Biaya</h2>
+    <p class="sub">Masukkan perkiraan persentase waktu aktif tiap perangkat dalam sebulan (tidak harus total 100% — sistem otomatis normalisasi). Ini mensimulasikan output SARIMAX-like dari sistem.</p>
+
+    <div class="dev-grid" id="deviceInputs"></div>
+
+    <button class="btn-primary" id="runBtn">Hitung Prediksi</button>
+
+    <div class="result-box" id="calcResult" style="display:none"></div>
+  </div>
+
+  <div class="footer">
+    Simulator ini tidak terhubung ke sensor atau Firebase — seluruh data adalah hasil perhitungan lokal di browser Anda.<br>
+    Sistem nyata: ESP32 + PZEM004t → Firebase → GitHub Actions → SARIMAX + PPO RL → Dashboard
+  </div>
+
+</div>
+
+<script>
+  /* ────────── CONFIG ────────── */
+  var TARIF = 1352;
+  var DAILY_TARGET = 8333;
+  var DEVICE_WATT = { AC:450, 'Water Heater':800, TV:90, Magicom:120, Laptop:70, Lainnya:150 };
+  var ACTIONS = [
+    'Pertahankan pola — konsumsi dalam batas budget',
+    'Kurangi setpoint AC sebesar 1–2°C',
+    'Tunda penggunaan Magicom ke luar jam puncak',
+    'Persingkat durasi Water Heater',
+    'Matikan TV bila tidak aktif ditonton'
+  ];
+
+  /* ────────── SIMULATOR ────────── */
+  var sCur = 0, sTotal = 6;
+  var sV, sA, sW, sT, sE, sRaw, sSan, sSteps, sGap, sOver, sActIdx, sActLabel, sPredDaily;
+
+  function rand(min, max) { return min + Math.random() * (max - min); }
+  function idr(n) { return 'Rp ' + Math.round(n||0).toLocaleString('id-ID'); }
+
+  function genData() {
+    sV = rand(219,224).toFixed(1);
+    sA = rand(0.7,1.6).toFixed(2);
+    sW = (sV * sA).toFixed(1);
+    sT = rand(26,32).toFixed(1);
+    sE = rand(0.1,0.2).toFixed(3);
+    sRaw = (parseFloat(sW) * rand(0.7,1.4)).toFixed(1);
+    sSan = Math.min(Math.max(parseFloat(sRaw),0), parseFloat(sW)*2).toFixed(1);
+    sSteps = Array.from({length:6},function(_,i){
+      return (parseFloat(sSan)*(1+(i*0.03-0.05))).toFixed(0);
+    }).join(', ');
+    sGap = Math.round(rand(-22000, 40000));
+    sOver = sGap > 0;
+    sActIdx = sOver ? (1+Math.floor(Math.random()*3)) : 0;
+    sActLabel = ACTIONS[sActIdx];
+    sPredDaily = Math.round((parseFloat(sSan)/1000)*24*TARIF);
+  }
+
+  genData();
+
+  function setPillsHtml(i) {
+    var m = {
+      0: ['Tegangan: '+sV+' V','Arus: '+sA+' A','Daya: '+sW+' W','Suhu: '+sT+' °C','kWh: '+sE],
+      1: ['/Monitoring ← data live','/history ← tiap 60 detik'],
+      2: ['Cron: */15 * * * *','sarimax_bundle.pkl','model_rl_budget.zip'],
+      3: ['Forecast mentah: '+sRaw+' W','Setelah sanitasi: '+sSan+' W','6-step: ['+sSteps+']'],
+      4: ['Dimensi state: 15','Aksi dipilih: '+sActIdx,'Gap budget: '+Math.abs(sGap).toLocaleString('id-ID')+' Rp ('+(sOver?'melebihi':'dalam batas')+')'],
+      5: [
+        'Prediksi biaya harian: '+idr(sPredDaily),
+        'Status: '+(sPredDaily>DAILY_TARGET?'⚠ over_budget':'✓ on_track'),
+        'Badge: '+(sPredDaily<=DAILY_TARGET?'Hemat '+(((DAILY_TARGET-sPredDaily)/DAILY_TARGET)*100).toFixed(1)+'%':'Perlu penghematan')
+      ]
+    };
+    document.getElementById('pills'+i).innerHTML = m[i].map(function(p){
+      return '<span class="pill">'+p+'</span>';
+    }).join('');
+    if (i===4) {
+      document.getElementById('rlBadge').innerHTML = sOver
+        ? '<span class="rl-badge rl-warn">⚠ '+sActLabel+'</span>'
+        : '<span class="rl-badge rl-ok">✓ '+sActLabel+'</span>';
+    }
+  }
+
+  function setClass(i, cls) {
+    document.getElementById('step'+i).className = 'sim-step '+cls;
+    var d = document.getElementById('dot'+i);
+    d.textContent = cls==='done' ? '✓' : (i+1);
+  }
+
+  function simNext() {
+    if (sCur>0) setClass(sCur-1,'done');
+    if (sCur<sTotal) { setClass(sCur,'active'); setPillsHtml(sCur); sCur++; }
+    document.getElementById('progBar').style.width = Math.round(sCur/sTotal*100)+'%';
+    document.getElementById('stepLabel').textContent = 'Langkah '+sCur+' dari '+sTotal;
+    document.getElementById('btnReset').style.opacity='1';
+    if (sCur===sTotal) {
+      document.getElementById('btnNext').disabled=true;
+      document.getElementById('simMsg').textContent='✓ Satu siklus selesai! Tekan "Ulangi" untuk data baru.';
+    }
+  }
+
+  var blankPills = {
+    0:['Tegangan: — V','Arus: — A','Daya: — W','Suhu: — °C','kWh: —'],
+    1:['/Monitoring ← data live','/history ← tiap 60 detik'],
+    2:['Cron: */15 * * * *','sarimax_bundle.pkl','model_rl_budget.zip'],
+    3:['Forecast mentah: — W','Setelah sanitasi: — W','6-step: —'],
+    4:['Dimensi state: 15','Aksi dipilih: —','Gap budget: — Rp'],
+    5:['Prediksi biaya harian: — Rp','Status: —','Badge: —']
+  };
+
+  function simReset() {
+    sCur=0; genData();
+    for(var i=0;i<sTotal;i++) {
+      setClass(i, i===0?'active':'idle');
+      document.getElementById('dot'+i).textContent=i+1;
+      document.getElementById('pills'+i).innerHTML = blankPills[i].map(function(p){return '<span class="pill">'+p+'</span>';}).join('');
+    }
+    document.getElementById('rlBadge').innerHTML='';
+    document.getElementById('progBar').style.width='0%';
+    document.getElementById('stepLabel').textContent='Langkah 0 dari 6';
+    document.getElementById('btnNext').disabled=false;
+    document.getElementById('btnReset').style.opacity='.5';
+    document.getElementById('simMsg').textContent='';
+  }
+
+  /* ────────── DEVICE CALCULATOR ────────── */
+  var devContainer = document.getElementById('deviceInputs');
+  Object.keys(DEVICE_WATT).forEach(function(name) {
+    var label = document.createElement('div');
+    label.className = 'dev-label';
+    label.innerHTML = name + ' <span>(~' + DEVICE_WATT[name] + 'W)</span>';
+    var input = document.createElement('input');
+    input.type = 'number'; input.min = '0'; input.max = '100'; input.value = '0';
+    input.id = 'dev_'+name.replace(/\s/g,'_');
+    devContainer.appendChild(label);
+    devContainer.appendChild(input);
+  });
+
+  document.getElementById('runBtn').addEventListener('click', function() {
+    var usage={}, total=0;
+    Object.keys(DEVICE_WATT).forEach(function(name){
+      var v = Math.max(Number(document.getElementById('dev_'+name.replace(/\s/g,'_')).value||0),0);
+      usage[name]=v; total+=v;
+    });
+    if(total<=0){ alert('Masukkan minimal satu nilai > 0.'); return; }
+
+    var watt=0;
+    Object.keys(DEVICE_WATT).forEach(function(name){ watt+=DEVICE_WATT[name]*(usage[name]/total); });
+
+    var dailyCost = (watt*24/1000)*TARIF;
+    var monthlyKwh = (watt*24*30)/1000;
+    var monthlyCost = monthlyKwh*TARIF;
+    var isOver = dailyCost > DAILY_TARGET;
+
+    var top = Object.entries(usage).sort(function(a,b){return b[1]-a[1];})[0];
+    var rec = top&&top[0]==='Water Heater'
+      ? 'Rekomendasi RL: persingkat durasi Water Heater saat jam puncak (17:00–22:00).'
+      : top&&top[0]==='AC'
+      ? 'Rekomendasi RL: naikkan setpoint AC 1–2°C untuk mengurangi konsumsi.'
+      : 'Rekomendasi RL: pertahankan pola pemakaian, prioritaskan beban utama.';
+
+    var el = document.getElementById('calcResult');
+    el.style.display='block';
+    el.innerHTML =
+      '<div style="margin-bottom:10px">'
+      +'<span class="tag tag-purple">Hasil Simulasi</span> '
+      +'<span class="tag '+(isOver?'tag-amber':'tag-green')+'">'+(isOver?'⚠ Melebihi target harian':'✓ Dalam batas target')+'</span>'
+      +'</div>'
+      +'<div class="kpi-grid">'
+      +'<div class="kpi-box"><div class="kpi-label">Prediksi daya rata-rata</div><div class="kpi-value">'+watt.toFixed(1)+' W</div></div>'
+      +'<div class="kpi-box"><div class="kpi-label">Prediksi biaya harian</div><div class="kpi-value">'+idr(dailyCost)+'</div></div>'
+      +'<div class="kpi-box"><div class="kpi-label">Prediksi kWh bulanan</div><div class="kpi-value">'+monthlyKwh.toFixed(2)+' kWh</div></div>'
+      +'<div class="kpi-box"><div class="kpi-label">Prediksi biaya bulanan</div><div class="kpi-value">'+idr(monthlyCost)+'</div></div>'
+      +'</div>'
+      +'<p style="margin-top:12px;font-size:13px"><strong>'+rec+'</strong></p>';
+  });
+</script>
 </body>
 </html>
