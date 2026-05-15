@@ -31,7 +31,8 @@ jobs:
       FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
       TARIF_PER_KWH: ${{ secrets.TARIF_PER_KWH }}
       DEFAULT_MONTHLY_TARGET_RP: ${{ secrets.DEFAULT_MONTHLY_TARGET_RP }}
-      RL_MODEL_PATH: model_ai/model_rl_budget.zip
+      RL_MODEL_PATH: model_ai/model_rl_budget_v2.pt
+      LEGACY_RL_MODEL_PATH: model_ai/model_rl_budget.zip
       SARIMAX_MODEL_PATH: model_ai/sarimax_bundle.pkl
       RL_DRIVE_FILE_ID: ${{ secrets.RL_DRIVE_FILE_ID }}
       SARIMAX_DRIVE_FILE_ID: ${{ secrets.SARIMAX_DRIVE_FILE_ID }}
@@ -92,7 +93,7 @@ jobs:
           elif [ -n "${RL_DRIVE_FILE_ID}" ]; then
             gdown "${RL_DRIVE_FILE_ID}" -O "${RL_MODEL_PATH}"
           else
-            gdown "${DEFAULT_RL_URL}" -O "${RL_MODEL_PATH}"
+            gdown "${DEFAULT_RL_URL}" -O "${LEGACY_RL_MODEL_PATH}"
           fi
           if [ -n "${SARIMAX_KWH_DRIVE_URL}" ]; then
             gdown "${SARIMAX_KWH_DRIVE_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
