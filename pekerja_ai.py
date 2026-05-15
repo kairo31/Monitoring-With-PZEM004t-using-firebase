@@ -10,6 +10,8 @@ import pytz
 from firebase_admin import credentials, db
 from stable_baselines3 import PPO
 
+from rl_budget_v2 import OBS_DIM as RL_V2_OBS_DIM
+from rl_budget_v2 import RLBudgetV2Agent, build_state_from_values
 from sarimax_utils import forecast_next_step, load_sarimax_artifact
 
 print("🤖 Pekerja AI berjalan...")
@@ -19,7 +21,8 @@ DB_URL = os.getenv(
     "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app",
 )
 SARIMAX_MODEL_PATH = os.getenv("SARIMAX_MODEL_PATH", "model_ai/sarimax_bundle.pkl")
-RL_MODEL_PATH = os.getenv("RL_MODEL_PATH", "model_ai/model_rl_budget.zip")
+RL_MODEL_PATH = os.getenv("RL_MODEL_PATH", "model_ai/model_rl_budget_v2.pt")
+LEGACY_RL_MODEL_PATH = "model_ai/model_rl_budget.zip"
 LEGACY_SARIMAX_MODEL_PATH = "model_ai/model_sarimax_kairo (1).pkl"
 TARIF_PER_KWH = float(os.getenv("TARIF_PER_KWH", "1352.0"))
 DEFAULT_MONTHLY_TARGET_RP = float(os.getenv("DEFAULT_MONTHLY_TARGET_RP", "250000"))
@@ -38,11 +41,28 @@ def initialize_firebase() -> None:
     print("✅ Berhasil login ke Firebase melalui jalur aman!")
 
 
-def load_rl_model() -> PPO | None:
-    if not os.path.exists(RL_MODEL_PATH):
-        print(f"⚠️ Model RL tidak ditemukan di {RL_MODEL_PATH}. Menggunakan policy hemat berbasis aturan.")
-        return None
-    return PPO.load(RL_MODEL_PATH)
+def load_rl_model() -> PPO | RLBudgetV2Agent | None:
+    candidate_paths = [RL_MODEL_PATH]
+    if RL_MODEL_PATH != LEGACY_RL_MODEL_PATH:
+        candidate_paths.append(LEGACY_RL_MODEL_PATH)
+
+    for model_path in candidate_paths:
+        if not os.path.exists(model_path):
+            continue
+        try:
+            if model_path.endswith(".pt"):
+                print(f"✅ Memuat RL v2 PyTorch dari {model_path}")
+                return RLBudgetV2Agent.load(model_path)
+            print(f"✅ Memuat RL legacy Stable-Baselines3 dari {model_path}")
+            return PPO.load(model_path)
+        except Exception as exc:
+            print(f"⚠️ Model RL di {model_path} gagal dimuat ({exc}). Mencoba kandidat lain/fallback.")
+
+    print(
+        f"⚠️ Model RL tidak ditemukan di {RL_MODEL_PATH}. "
+        "Menggunakan policy hemat berbasis aturan."
+    )
+    return None
 
 
 def fetch_latest_monitoring_state() -> Dict[str, float]:
@@ -169,11 +189,13 @@ def map_rl_action_to_text(action: int) -> str:
     if action == 1:
         return "⚠️ Matikan atau naikkan setpoint AC 1-2°C untuk menekan beban puncak."
     if action == 2:
-        return "⚠️ Tunda pemakaian Magicom bila belum mendesak agar konsumsi turun."
-    if action == 3:
         return "⚠️ Kurangi durasi Waterheater karena ini salah satu beban terbesar."
-    if action == 4:
+    if action == 3:
         return "💡 Matikan TV saat tidak ditonton untuk menjaga konsumsi tetap hemat."
+    if action == 4:
+        return "⚠️ Gunakan Magicom seperlunya atau pindahkan ke mode warm saat nasi sudah matang."
+    if action == 5:
+        return "💡 Aktifkan mode hemat daya Laptop atau cabut charger saat baterai sudah cukup."
     return "✅ Pola beban saat ini masih aman. Pertahankan kebiasaan hemat hari ini."
 
 
@@ -269,8 +291,8 @@ latest_features = {
 
 # Ambil list prediksi untuk beberapa step ke depan
 raw_prediksi_watt_list = forecast_next_step(
-    artifact=sarimax_artifact, 
-    latest_features=latest_features, 
+    artifact=sarimax_artifact,
+    latest_features=latest_features,
     current_watt=monitoring_state["Daya"],
     steps=6  # Contoh: Ambil 6 langkah ke depan
 )
@@ -304,28 +326,21 @@ if model_rl is not None:
     is_weekend = float(1 if now.weekday() >= 5 else 0)
     day_progress = float(now.day / max(int(budget_context["days_in_month"]), 1))
     days_remaining = float(max(int(budget_context["days_in_month"]) - now.day, 0))
-    
-    state_v2 = np.array(
-        [
-            monitoring_state["Daya"],
-            monitoring_state["Suhu"],
-            device_state["AC"],
-            device_state["Magicom"],
-            device_state["Waterheater"],
-            device_state["TV"],
-            jam_skrg,
-            day_of_week,
-            is_weekend,
-            is_peak_hour,
-            day_progress,
-            days_remaining,
-            prediksi_watt,
-            float(budget_context["monthly_target_rp"]),
-            gap_to_target,
-        ],
-        dtype=np.float32,
+
+    state_v2 = build_state_from_values(
+        daya=monitoring_state["Daya"],
+        suhu=monitoring_state["Suhu"],
+        device_state=device_state,
+        jam=jam_skrg,
+        day_of_week=day_of_week,
+        is_weekend=is_weekend,
+        day_progress=day_progress,
+        days_remaining=days_remaining,
+        prediksi_watt=prediksi_watt,
+        monthly_target_rp=float(budget_context["monthly_target_rp"]),
+        gap_to_target=gap_to_target,
     )
-    
+
     state_v1_10d = np.array(
         [
             monitoring_state["Daya"],
@@ -341,7 +356,7 @@ if model_rl is not None:
         ],
         dtype=np.float32,
     )
-    
+
     state_v1 = np.array(
         [
             monitoring_state["Daya"],
@@ -361,7 +376,7 @@ if model_rl is not None:
         expected_obs_dim = len(state_v2)
 
     try:
-        if expected_obs_dim >= len(state_v2):
+        if expected_obs_dim == RL_V2_OBS_DIM:
             state = state_v2
         elif expected_obs_dim >= len(state_v1_10d):
             state = state_v1_10d
@@ -392,7 +407,7 @@ print(f" Indikator hemat hari ini: {recommendation['saving_badge']}")
 db.reference("Hasil_AI").set(
     {
         "prediksi_daya_selanjutnya": round(float(prediksi_watt), 2),
-        "prediksi_masa_depan": prediksi_watt_list, # Array prediksi dikirim ke Firebase
+        "prediksi_masa_depan": prediksi_watt_list,
         "prediksi_daya_selanjutnya_raw": round(float(raw_prediksi_watt), 2),
         "prediksi_adjustment": prediksi_adjustment,
         "rekomendasi_rl": recommendation["combined_advice"],
