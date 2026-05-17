@@ -1,10 +1,17 @@
+"""Train RL budget v2 custom Actor-Critic/PPO-style model.
 
+The v2 state explicitly supports five devices at the same time:
+AC, Waterheater, TV, Magicom, and Laptop.  Output checkpoints are PyTorch
+``.pt`` files that can be loaded by ``pekerja_ai.py`` through ``rl_budget_v2``.
+"""
 
 from __future__ import annotations
 
 import json
 import os
 import random
+from importlib import import_module
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +62,8 @@ ENTROPY_COEF = float(os.getenv("RL_ENTROPY_COEF", "0.01"))
 BATCH_SIZE = int(os.getenv("RL_BATCH_SIZE", "512"))
 N_EPOCHS = int(os.getenv("RL_N_EPOCHS", "10"))
 MINIBATCH_SIZE = int(os.getenv("RL_MINIBATCH_SIZE", "128"))
+ENABLE_VISUALIZER = os.getenv("RL_ENABLE_VISUALIZER", "0") == "1"
+VISUALIZER_EVERY = max(int(os.getenv("RL_VISUALIZER_EVERY", "5")), 1)
 
 
 class BudgetEnergyEnvV2:
@@ -256,6 +265,14 @@ def train(rows: list[TrainRow], monthly_target_rp: float) -> list[dict[str, Any]
     timesteps_done = 0
     iteration = 0
     logs: list[dict[str, Any]] = []
+    visualizer = None
+    if ENABLE_VISUALIZER and find_spec("rl_visualizer_colab") is not None:
+        visualizer_module = import_module("rl_visualizer_colab")
+        visualizer = visualizer_module.LiveTrainingPlot()
+        visualizer_module.draw_ppo_pipeline(
+            MODEL_OUTPUT_PATH.parent / "ppo_pipeline.png",
+            show=False,
+        )
 
     while timesteps_done < TOTAL_TIMESTEPS:
         iteration += 1
@@ -308,14 +325,19 @@ def train(rows: list[TrainRow], monthly_target_rp: float) -> list[dict[str, Any]
                 critic_losses.append(float(critic_loss.item()))
                 actor_losses.append(float(actor_loss.item()))
 
+        mean_abs_gap_after_rp = round(float(np.mean(np.abs(batch["gaps_after"]))), 2)
+        mean_prediksi_watt = round(float(np.mean(batch["states"][:, BudgetEnergyEnvV2.IDX_PREDIKSI_WATT])), 2)
         log_entry = {
             "iter": iteration,
             "timesteps": timesteps_done,
             "reward": round(float(np.mean(batch["rewards"])), 4),
             "loss_critic": round(float(np.mean(critic_losses)), 4),
             "loss_actor": round(float(np.mean(actor_losses)), 4),
-            "mean_abs_gap_after_rp": round(float(np.mean(np.abs(batch["gaps_after"]))), 2),
-            "mean_prediksi_watt": round(float(np.mean(batch["states"][:, BudgetEnergyEnvV2.IDX_PREDIKSI_WATT])), 2),
+            "mean_abs_gap_after_rp": mean_abs_gap_after_rp,
+            "mean_prediksi_watt": mean_prediksi_watt,
+            # Aliases used by rl_visualizer_colab.py and older notebooks.
+            "gap_budget": mean_abs_gap_after_rp,
+            "prediksi_watt": mean_prediksi_watt,
         }
         logs.append(log_entry)
         print(
@@ -323,9 +345,19 @@ def train(rows: list[TrainRow], monthly_target_rp: float) -> list[dict[str, Any]
             f"| Reward {log_entry['reward']:+.4f} | Gap Rp {log_entry['mean_abs_gap_after_rp']:,.0f} "
             f"| C {log_entry['loss_critic']:.4f} | A {log_entry['loss_actor']:.4f}"
         )
+        if visualizer is not None and iteration % VISUALIZER_EVERY == 0:
+            visualizer.update_from_log(log_entry)
 
     save_checkpoint(MODEL_OUTPUT_PATH, actor, critic, logs)
     write_training_log(MODEL_OUTPUT_PATH.parent / "training_log_rl_v2.json", logs)
+    if visualizer is not None:
+        visualizer.save(MODEL_OUTPUT_PATH.parent / "training_curves.png")
+        visualizer_module.show_log_table(logs)
+        visualizer_module.plot_device_and_actions(
+            logs,
+            save_path=MODEL_OUTPUT_PATH.parent / "device_action_chart.png",
+            show=False,
+        )
     return logs
 
 
