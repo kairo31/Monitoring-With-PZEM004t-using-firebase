@@ -37,7 +37,7 @@ jobs:
 
       - name: Compile check
         run: |
-          python -m py_compile pekerja_ai.py rekap_harian.py sarimax_utils.py sarimax_firebase_train.py rl_retrain_budget.py model_ai/pekerja_ai.py
+         python -m py_compile pekerja_ai.py rekap_harian.py sarimax_utils.py Train/sarimax_firebase_train.py Train/rl_retrain_budget.py model_ai/pekerja_ai.py
           
       - name: Cek Cache Model AI
         id: cache-models-ci
