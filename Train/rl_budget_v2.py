@@ -1,3 +1,10 @@
+"""Budget-aware RL v2 utilities for five household devices.
+
+Model v2 uses a custom PyTorch actor/critic checkpoint instead of the
+Stable-Baselines3 zip format used by the previous PPO agent.  The public
+inference API intentionally mimics SB3's ``predict`` method so the worker can
+use either model family while the application migrates.
+"""
 
 from __future__ import annotations
 
