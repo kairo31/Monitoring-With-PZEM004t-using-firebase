@@ -1,5 +1,5 @@
-!pip install pmdarima
-!pip uninstall gym -y
+#!pip install pmdarima
+#!pip uninstall gym -y
 
 import os
 import sys
@@ -11,7 +11,7 @@ import datetime
 import pytz
 
 # ==========================================
-# KONFIGURASI PARAMETER (Sesuai Aslinya)
+# KONFIGURASI PARAMETER 
 # ==========================================
 PATH_JSON = '/content/drive/MyDrive/SKRIPSHIT/firebase-project/firebase-project/serviceAccountKey.json'
 DB_URL = 'https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app'
