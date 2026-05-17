@@ -118,3 +118,9 @@ jobs:
       - name: Retrain RL
         if: ${{ steps.gate.outputs.required_ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.retrain_rl == 'true' }}
         run: python rl_retrain_budget.py
+
+      - name: AI worker inference
+        if: ${{ steps.gate.outputs.required_ready == 'true' && (github.event_name == 'schedule' || inputs.run_worker == 'true') }}
+        env:
+          PYTHONPATH: ${{ github.workspace }}/Train
+        run: python pekerja_ai.py
