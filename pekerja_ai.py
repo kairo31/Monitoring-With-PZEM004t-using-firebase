@@ -10,11 +10,15 @@ import pytz
 from firebase_admin import credentials, db
 from stable_baselines3 import PPO
 
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "Train"))
+
 from rl_budget_v2 import OBS_DIM as RL_V2_OBS_DIM
 from rl_budget_v2 import RLBudgetV2Agent, build_state_from_values
 from sarimax_utils import forecast_next_step, load_sarimax_artifact
 
-print("🤖 Pekerja AI berjalan...")
+print(" Pekerja AI berjalan...")
 
 DB_URL = os.getenv(
     "FIREBASE_DB_URL",
