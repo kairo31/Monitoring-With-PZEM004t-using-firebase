@@ -1,40 +1,332 @@
-import calendar
-import json
-import os
-from datetime import datetime
-from typing import Any, Dict
+"""
+pekerja_ai.py — Inference Worker untuk RL Budget Energy v2
+===========================================================
+CHANGELOG dari versi lama:
+  1. _build_state_from_firebase() — urutan state disamakan dengan
+     BudgetEnergyEnv._build_state() di rl_budget_v2.py (OBS_DIM=16)
+     Urutan lama (AC, Magicom, WH, TV) → baru (AC, Magicom, WH, TV, Laptop)
+  2. ACTION_LABELS — identik dengan rl_budget_v2.py (6 aksi)
+  3. load_rl_model() — bercabang:
+       .pt  → custom ActorNetwork (model v2)
+       .zip → PPO stable-baselines3 (model lama, backward-compat)
+  4. Pengambilan data Firebase: tambah node "Laptop" di samping
+     "AC", "Magicom", "WaterHeater", "TV"
+"""
 
-import firebase_admin
+import os
+import calendar
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Tuple
+
 import numpy as np
 import pytz
-from firebase_admin import credentials, db
-from stable_baselines3 import PPO
 
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "Train"))
+# ── Firebase ──────────────────────────────────────────────────────────────────
+try:
+    import firebase_admin
+    from firebase_admin import credentials, db
+    FIREBASE_AVAILABLE = True
+except ImportError:
+    FIREBASE_AVAILABLE = False
 
-from rl_budget_v2 import OBS_DIM as RL_V2_OBS_DIM
-from rl_budget_v2 import RLBudgetV2Agent, build_state_from_values
-from sarimax_utils import forecast_next_step, load_sarimax_artifact
+DB_URL                 = os.getenv("FIREBASE_DB_URL",
+    "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app")
+PATH_JSON              = os.getenv("FIREBASE_CREDENTIALS",
+    "/content/drive/MyDrive/SKRIPSHIT/firebase-project/firebase-project/serviceAccountKey.json")
+RL_MODEL_PATH          = os.getenv("RL_MODEL_PATH", "model_ai/model_rl_budget_v2.pt")
+DEFAULT_MONTHLY_BUDGET = float(os.getenv("DEFAULT_MONTHLY_TARGET_RP", "250000"))
+TARIF_PER_KWH          = float(os.getenv("TARIF_PER_KWH", "1352.0"))
+TZ                     = pytz.timezone("Asia/Jakarta")
 
-print(" Pekerja AI berjalan...")
+# ── Koreksi kalibrasi — WAJIB sama dengan rl_budget_v2.py ────────────────────
+CALIBRATION_CURRENT_CORRECTION = 1.018
+CALIBRATION_VOLTAGE_CORRECTION = 1.000
 
-DB_URL = os.getenv(
-    "FIREBASE_DB_URL",
-    "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app",
-)
-SARIMAX_MODEL_PATH = os.getenv("SARIMAX_MODEL_PATH", "model_ai/sarimax_bundle.pkl")
-RL_MODEL_PATH = os.getenv("RL_MODEL_PATH", "model_ai/model_rl_budget_v2.pt")
-LEGACY_RL_MODEL_PATH = "model_ai/model_rl_budget.zip"
-LEGACY_SARIMAX_MODEL_PATH = "model_ai/model_sarimax_kairo (1).pkl"
-TARIF_PER_KWH = float(os.getenv("TARIF_PER_KWH", "1352.0"))
-DEFAULT_MONTHLY_TARGET_RP = float(os.getenv("DEFAULT_MONTHLY_TARGET_RP", "250000"))
+# ── Konstanta OBS & ACTION — WAJIB sama dengan rl_budget_v2.py ───────────────
+OBS_DIM   = 16
+N_ACTIONS = 6
+HIDDEN_DIM = 128
+
+# ── Action labels — WAJIB identik dengan rl_budget_v2.py ─────────────────────
+ACTION_LABELS = {
+    0: "Tidak ada tindakan",
+    1: "Matikan / kurangi AC",
+    2: "Tunda / hemat Magicom",
+    3: "Matikan / kurangi WaterHeater",
+    4: "Matikan TV",
+    5: "Mode hemat Laptop",
+}
+ACTION_REDUCTION = {
+    0: 0.00, 1: 0.30, 2: 0.10, 3: 0.20, 4: 0.05, 5: 0.05,
+}
 
 
-def initialize_firebase() -> None:
-    firebase_key_json = os.getenv("FIREBASE_KEY")
-    if not firebase_key_json:
+# ═══════════════════════════════════════════════════════════════════════════════
+# FIREBASE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def initialize_firebase():
+    if not FIREBASE_AVAILABLE:
+        raise ImportError("firebase_admin tidak terinstall.")
+    cred_path = Path(PATH_JSON)
+    if not cred_path.exists():
+        raise FileNotFoundError(f"Kredensial tidak ada: {PATH_JSON}")
+    cred = credentials.Certificate(str(cred_path))
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
+
+
+def get_latest_sensor_data() -> dict:
+    """
+    Ambil data terbaru dari Firebase.
+    Node yang dibaca: history (PZEM), AC, Magicom, WaterHeater, TV, Laptop,
+                      user_preferences.
+    """
+    history_ref  = db.reference("history")
+    prefs_ref    = db.reference("user_preferences")
+
+    history_raw  = history_ref.order_by_key().limit_to_last(1).get()
+    prefs        = prefs_ref.get() or {}
+
+    if not history_raw:
+        raise ValueError("Tidak ada data di node 'history'.")
+
+    latest = list(history_raw.values())[0]
+    return {
+        "daya":     float(latest.get("Daya", 0) or 0),
+        "suhu":     float(np.clip(latest.get("Suhu", 25) or 25, 10, 60)),
+        "arus":     float(latest.get("Arus", 0) or 0),
+        "tegangan": float(latest.get("Tegangan", 0) or 0),
+        "waktu_ms": latest.get("waktu", 0),
+        "monthly_budget": float(
+            prefs.get("monthly_budget_rp", DEFAULT_MONTHLY_BUDGET)
+            or DEFAULT_MONTHLY_BUDGET
+        ),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STATE BUILDER — urutan WAJIB identik dengan BudgetEnergyEnv._build_state()
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _device_flags(daya: float) -> Tuple[int, int, int, int, int]:
+    """
+    Threshold dari DATA_KALIBRASI PZEM-004T (V × I):
+      AC          avg 361.6 W → daya > 300
+      Magicom     avg ~157  W → 100 < daya <= 220
+      WaterHeater avg 246.5 W → 220 < daya <= 300
+      TV          avg  53.0 W →  35 < daya <= 100
+      Laptop      avg  76.7 W →  60 < daya <= 220  (bisa overlap Magicom)
+
+    Return order: (flag_ac, flag_magicom, flag_wh, flag_tv, flag_laptop)
+    → Sesuai idx 2–6 di state vector.
+    """
+    return (
+        1 if daya > 300            else 0,   # flag_ac
+        1 if 100 < daya <= 220     else 0,   # flag_magicom
+        1 if 220 < daya <= 300     else 0,   # flag_waterheater
+        1 if  35 < daya <= 100     else 0,   # flag_tv
+        1 if  60 < daya <= 220     else 0,   # flag_laptop
+    )
+
+
+def _prediksi_watt(daya: float, arus: float, tegangan: float) -> float:
+    """P = V × I + koreksi kalibrasi. Fallback ke daya jika sensor nol."""
+    if tegangan > 0 and arus > 0:
+        return max(tegangan * CALIBRATION_VOLTAGE_CORRECTION
+                   * arus   * CALIBRATION_CURRENT_CORRECTION, 0.0)
+    return max(daya, 0.0)
+
+
+def build_state_from_firebase(sensor: dict) -> np.ndarray:
+    """
+    Bangun state vector 16-dim dari data sensor Firebase.
+    Urutan idx 0–15 WAJIB identik dengan BudgetEnergyEnv._build_state().
+
+    ┌─────┬──────────────────┐  ┌─────┬──────────────────┐
+    │  0  │ daya             │  │  8  │ day_of_week      │
+    │  1  │ suhu             │  │  9  │ is_weekend       │
+    │  2  │ flag_ac          │  │ 10  │ is_peak_hour     │
+    │  3  │ flag_magicom     │  │ 11  │ day_progress     │
+    │  4  │ flag_waterheater │  │ 12  │ days_remaining   │
+    │  5  │ flag_tv          │  │ 13  │ prediksi_watt    │
+    │  6  │ flag_laptop      │  │ 14  │ monthly_budget   │
+    │  7  │ jam              │  │ 15  │ gap_to_target    │
+    └─────┴──────────────────┘  └─────┴──────────────────┘
+    """
+    daya     = sensor["daya"]
+    suhu     = sensor["suhu"]
+    arus     = sensor["arus"]
+    tegangan = sensor["tegangan"]
+    budget   = sensor["monthly_budget"]
+
+    # Waktu
+    waktu_ms = sensor.get("waktu_ms", 0)
+    if waktu_ms:
+        dt = datetime.fromtimestamp(waktu_ms / 1000, tz=TZ)
+    else:
+        dt = datetime.now(TZ)
+
+    jam         = float(dt.hour)
+    dow         = float(dt.weekday())
+    is_weekend  = float(1 if dt.weekday() >= 5 else 0)
+    is_peak     = float(1 if 17 <= dt.hour <= 22 else 0)
+    days_in_mo  = calendar.monthrange(dt.year, dt.month)[1]
+    day_prog    = float(dt.day / days_in_mo)
+    days_rem    = float(max(days_in_mo - dt.day, 0))
+
+    # Flags & prediksi
+    fa, fmc, fwh, ftv, flp = _device_flags(daya)
+    pred_watt = _prediksi_watt(daya, arus, tegangan)
+    gap = ((pred_watt / 1000.0) * 24 * TARIF_PER_KWH * 30) - budget
+
+    return np.array([
+        daya, suhu,           # 0–1
+        fa, fmc, fwh, ftv, flp,  # 2–6  (AC, Magicom, WH, TV, Laptop)
+        jam, dow, is_weekend, is_peak,  # 7–10
+        day_prog, days_rem,   # 11–12
+        pred_watt,            # 13
+        budget,               # 14
+        gap,                  # 15
+    ], dtype=np.float32)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LOADER — bercabang .pt (custom v2) vs .zip (PPO SB3 lama)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def load_rl_model(model_path: Optional[str] = None):
+    """
+    Loader bercabang:
+      .pt  → custom ActorNetwork dari rl_budget_v2.py
+      .zip → PPO dari stable_baselines3 (model lama, backward-compat)
+
+    Return: (model, model_type)
+      model_type: "custom_v2" | "ppo_sb3"
+    """
+    import torch
+    import torch.nn as nn
+    from torch.distributions import Categorical
+
+    path = str(model_path or RL_MODEL_PATH)
+
+    # ── Custom ActorNetwork (v2) ───────────────────────────────────────────
+    if path.endswith(".pt"):
+        class _Actor(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.net = nn.Sequential(
+                    nn.Linear(OBS_DIM, HIDDEN_DIM), nn.Tanh(),
+                    nn.Linear(HIDDEN_DIM, HIDDEN_DIM), nn.Tanh(),
+                    nn.Linear(HIDDEN_DIM, N_ACTIONS),
+                )
+            def forward(self, x):
+                return Categorical(logits=self.net(x))
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        actor  = _Actor().to(device)
+        ckpt   = torch.load(path, map_location=device)
+
+        # Checkpoint bisa berupa {"actor": state_dict} atau langsung state_dict
+        sd = ckpt.get("actor", ckpt)
+        actor.load_state_dict(sd)
+        actor.eval()
+        print(f"[Loader] ✅ custom ActorNetwork v2 dimuat dari {path}")
+        print(f"         OBS_DIM={OBS_DIM}, N_ACTIONS={N_ACTIONS}")
+        return actor, "custom_v2"
+
+    # ── PPO stable-baselines3 (model lama) ────────────────────────────────
+    else:
+        try:
+            from stable_baselines3 import PPO
+            model = PPO.load(path)
+            print(f"[Loader] ✅ PPO SB3 dimuat dari {path}")
+            print("         Pastikan state vector cocok dengan model lama (OBS_DIM=15, model lama; state akan di-slice otomatis).")
+            return model, "ppo_sb3"
+        except ImportError:
+            raise ImportError(
+                "stable_baselines3 tidak terinstall. "
+                "Install: pip install stable-baselines3"
+            )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INFERENCE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def predict_action(state: np.ndarray,
+                   model=None,
+                   model_type: str = "custom_v2") -> dict:
+    """
+    Inferensi dari state vector 16-dim.
+    Return dict: action, label, probabilities, gap_before, prediksi_watt.
+    """
+    import torch
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if model_type == "custom_v2":
+        with torch.no_grad():
+            t     = torch.FloatTensor(state).unsqueeze(0).to(device)
+            dist  = model(t)
+            probs = dist.probs.squeeze(0).cpu().numpy()
+        action = int(probs.argmax())
+    else:
+        # PPO SB3 — state harus OBS_DIM=15 (model lama)
+        # Jika memakai model lama, potong state[:16]
+        action, _ = model.predict(state[:16], deterministic=True)
+        action    = int(action)
+        probs     = np.zeros(N_ACTIONS); probs[action] = 1.0
+
+    return {
+        "action":         action,
+        "label":          ACTION_LABELS[action],
+        "reduction_pct":  ACTION_REDUCTION[action] * 100,
+        "probabilities":  {ACTION_LABELS[i]: round(float(p), 4)
+                           for i, p in enumerate(probs)},
+        "gap_to_target":  float(state[15]),     # idx 15 = gap_to_target
+        "prediksi_watt":  float(state[13]),     # idx 13 = prediksi_watt
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN — jalankan satu siklus inferensi
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def run_inference_cycle(model_path: Optional[str] = None) -> dict:
+    """
+    Satu siklus lengkap:
+      1. Ambil data Firebase
+      2. Bangun state vector
+      3. Inferensi → aksi
+      4. Tulis rekomendasi ke Firebase
+    """
+    sensor = get_latest_sensor_data()
+    state  = build_state_from_firebase(sensor)
+    model, mtype = load_rl_model(model_path)
+    result = predict_action(state, model, mtype)
+
+    # Tulis rekomendasi ke Firebase
+    db.reference("rekomendasi_rl").set({
+        "action":        result["action"],
+        "label":         result["label"],
+        "reduction_pct": result["reduction_pct"],
+        "gap_to_target": result["gap_to_target"],
+        "prediksi_watt": result["prediksi_watt"],
+        "timestamp_ms":  sensor["waktu_ms"],
+    })
+
+    print(f"\n[Inference] Aksi    : {result['action']} — {result['label']}")
+    print(f"[Inference] Reduksi : {result['reduction_pct']:.0f}%")
+    print(f"[Inference] Gap     : Rp {result['gap_to_target']:,.0f}")
+    print(f"[Inference] Pred W  : {result['prediksi_watt']:.1f} W")
+    return result
+
+
+if __name__ == "__main__":
+    initialize_firebase()
+    run_inference_cycle()    if not firebase_key_json:
         raise ValueError("❌ GAGAL: Kunci FIREBASE_KEY tidak ditemukan di environment/secrets!")
 
     key_dict = json.loads(firebase_key_json)
