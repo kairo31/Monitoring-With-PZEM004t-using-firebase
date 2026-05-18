@@ -162,7 +162,7 @@ def fetch_budget_context(now: datetime) -> Dict[str, float | int | str]:
     dashboard = db.reference("dashboard_info").get() or {}
     history = db.reference("rekap_harian/history").order_by_key().limit_to_last(30).get() or {}
 
-    monthly_target_rp = float(prefs.get("monthly_budget_rp", DEFAULT_MONTHLY_TARGET_RP) or DEFAULT_MONTHLY_TARGET_RP)
+    monthly_target_rp = float(prefs.get("monthly_budget_rp", DEFAULT_MONTHLY_BUDGET) or DEFAULT_MONTHLY_BUDGET)
     today_cost_rp = float(dashboard.get("biaya_hari_ini", 0) or 0)
     today_kwh = float(dashboard.get("kwh_hari_ini", 0) or 0)
     days_in_month = calendar.monthrange(now.year, now.month)[1]
