@@ -326,7 +326,8 @@ def run_inference_cycle(model_path: Optional[str] = None) -> dict:
 
 if __name__ == "__main__":
     initialize_firebase()
-    run_inference_cycle()    if not firebase_key_json:
+    run_inference_cycle()   
+  if not firebase_key_json:
         raise ValueError("❌ GAGAL: Kunci FIREBASE_KEY tidak ditemukan di environment/secrets!")
 
     key_dict = json.loads(firebase_key_json)
