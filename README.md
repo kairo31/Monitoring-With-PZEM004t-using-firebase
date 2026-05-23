@@ -2,7 +2,7 @@
 
 # Monitoring & Optimasi Energi: PZEM-004T + Firebase + AI Hybrid
 
-Sistem IoT untuk pemantauan beban listrik *intermittent* (terputus-putus) berbasis PZEM-004T dan Firebase, dilengkapi dengan **Hybrid Forecasting Model (SARIMAX-XGBoost)** untuk optimasi anggaran energi melalui *Reinforcement Learning*.
+Sistem IoT untuk pemantauan beban listrik berbasis PZEM-004T dan Firebase, dilengkapi dengan **Hybrid Forecasting Model (SARIMAX-XGBoost)** untuk optimasi anggaran energi melalui *Reinforcement Learning*.
 
 ## 🎯 Deskripsi Proyek
 
