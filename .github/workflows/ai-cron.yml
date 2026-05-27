@@ -27,21 +27,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
-      FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
-      TARIF_PER_KWH: ${{ secrets.TARIF_PER_KWH }}
-      DEFAULT_MONTHLY_TARGET_RP: ${{ secrets.DEFAULT_MONTHLY_TARGET_RP }}
-      RL_MODEL_PATH: model_ai/model_rl_budget_v2.pt
-      LEGACY_RL_MODEL_PATH: model_ai/model_rl_budget.zip
-      SARIMAX_MODEL_PATH: model_ai/sarimax_bundle.pkl
-      RL_DRIVE_FILE_ID: ${{ secrets.RL_DRIVE_FILE_ID }}
-      SARIMAX_DRIVE_FILE_ID: ${{ secrets.SARIMAX_DRIVE_FILE_ID }}
-      RL_DRIVE_URL: ${{ secrets.RL_DRIVE_URL }}
-      SARIMAX_DRIVE_URL: ${{ secrets.SARIMAX_DRIVE_URL }}
-      SARIMAX_KWH_DRIVE_URL: ${{ secrets.SARIMAX_KWH_DRIVE_URL }}
-      DEFAULT_SARIMAX_DAYA_URL: https://drive.google.com/file/d/1syzoFBIGYGLbYkzGYgP-n0zodYRz-Uie/view?usp=drive_link
-      DEFAULT_SARIMAX_KWH_URL: https://drive.google.com/file/d/1uquQtO9A7HRiwSGUqj-30Y7jxZparoFn/view?usp=drive_link
-      DEFAULT_RL_URL: https://drive.google.com/file/d/1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY/view?usp=drive_link
+      FIREBASE_KEY:                ${{ secrets.FIREBASE_KEY }}
+      FIREBASE_DB_URL:             ${{ secrets.FIREBASE_DB_URL }}
+      TARIF_PER_KWH:               ${{ secrets.TARIF_PER_KWH }}
+      DEFAULT_MONTHLY_TARGET_RP:   ${{ secrets.DEFAULT_MONTHLY_TARGET_RP }}
+      RL_MODEL_PATH:               model_ai/model_rl_budget_v2.pt
+      LEGACY_RL_MODEL_PATH:        model_ai/model_rl_budget.zip
+      SARIMAX_MODEL_PATH:          model_ai/sarimax_bundle.pkl
+      RL_DRIVE_FILE_ID:            ${{ secrets.RL_DRIVE_FILE_ID }}
+      SARIMAX_DRIVE_FILE_ID:       ${{ secrets.SARIMAX_DRIVE_FILE_ID }}
+      RL_DRIVE_URL:                ${{ secrets.RL_DRIVE_URL }}
+      SARIMAX_DRIVE_URL:           ${{ secrets.SARIMAX_DRIVE_URL }}
+      SARIMAX_KWH_DRIVE_URL:       ${{ secrets.SARIMAX_KWH_DRIVE_URL }}
+      DEFAULT_SARIMAX_DAYA_URL:    https://drive.google.com/file/d/1syzoFBIGYGLbYkzGYgP-n0zodYRz-Uie/view?usp=drive_link
+      DEFAULT_SARIMAX_KWH_URL:     https://drive.google.com/file/d/1uquQtO9A7HRiwSGUqj-30Y7jxZparoFn/view?usp=drive_link
+      DEFAULT_RL_URL:              https://drive.google.com/file/d/1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY/view?usp=drive_link
 
     steps:
       - name: Checkout
@@ -63,9 +63,10 @@ jobs:
         run: |
           if [ -z "${FIREBASE_KEY}" ] || [ -z "${FIREBASE_DB_URL}" ]; then
             echo "required_ready=false" >> "${GITHUB_OUTPUT}"
-            echo "FIREBASE_KEY atau FIREBASE_DB_URL belum di-set. Step runtime akan dilewati."
+            echo " FIREBASE_KEY atau FIREBASE_DB_URL belum di-set. Step runtime dilewati."
           else
             echo "required_ready=true" >> "${GITHUB_OUTPUT}"
+            echo " Secrets tersedia."
           fi
 
       - name: Cek Cache Model AI
@@ -76,11 +77,13 @@ jobs:
           path: model_ai
           key: ai-models-latest
 
-      - name: Download AI models from Google Drive
+      - name: Download AI models dari Google Drive
         if: ${{ steps.gate.outputs.required_ready == 'true' && steps.cache-models.outputs.cache-hit != 'true' }}
         run: |
           mkdir -p model_ai
           python -m pip install gdown
+
+          # SARIMAX bundle
           if [ -n "${SARIMAX_DRIVE_URL}" ]; then
             gdown "${SARIMAX_DRIVE_URL}" -O "${SARIMAX_MODEL_PATH}"
           elif [ -n "${SARIMAX_DRIVE_FILE_ID}" ]; then
@@ -88,6 +91,8 @@ jobs:
           else
             gdown "${DEFAULT_SARIMAX_DAYA_URL}" -O "${SARIMAX_MODEL_PATH}"
           fi
+
+          # RL model
           if [ -n "${RL_DRIVE_URL}" ]; then
             gdown "${RL_DRIVE_URL}" -O "${RL_MODEL_PATH}"
           elif [ -n "${RL_DRIVE_FILE_ID}" ]; then
@@ -95,11 +100,7 @@ jobs:
           else
             gdown "${DEFAULT_RL_URL}" -O "${LEGACY_RL_MODEL_PATH}"
           fi
-          if [ -n "${SARIMAX_KWH_DRIVE_URL}" ]; then
-            gdown "${SARIMAX_KWH_DRIVE_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
-          else
-            gdown "${DEFAULT_SARIMAX_KWH_URL}" -O "model_ai/sarimax_kwh_jam.pkl"
-          fi
+
           echo "=== Isi folder model_ai ==="
           ls -la model_ai
 
@@ -109,6 +110,8 @@ jobs:
 
       - name: AI worker inference
         if: ${{ steps.gate.outputs.required_ready == 'true' && (github.event_name == 'schedule' || inputs.run_worker == 'true') }}
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: python pekerja_ai.py
 
       - name: Retrain SARIMAX
@@ -117,10 +120,4 @@ jobs:
 
       - name: Retrain RL
         if: ${{ steps.gate.outputs.required_ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.retrain_rl == 'true' }}
-        run: python rl_retrain_budget.py
-
-      - name: AI worker inference
-        if: ${{ steps.gate.outputs.required_ready == 'true' && (github.event_name == 'schedule' || inputs.run_worker == 'true') }}
-        env:
-          PYTHONPATH: ${{ github.workspace }}/Train
-        run: python pekerja_ai.py
+        run: python Train/rl_retrain_budget.py
