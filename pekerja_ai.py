@@ -26,7 +26,9 @@ LEGACY_RL_MODEL_PATH = os.getenv("LEGACY_RL_MODEL_PATH", "model_ai/model_rl_budg
 SARIMAX_MODEL_PATH   = os.getenv("SARIMAX_MODEL_PATH", "model_ai/sarimax_bundle.pkl")
 LEGACY_SARIMAX_MODEL_PATH = os.getenv("LEGACY_SARIMAX_MODEL_PATH", "model_ai/legacy_sarimax.pkl")
 
-DEFAULT_MONTHLY_BUDGET = float(os.getenv("DEFAULT_MONTHLY_TARGET_RP", "250000"))
+# Budget: SELALU diambil dari Firebase user_preferences/monthly_budget_rp
+# FALLBACK hanya jika Firebase tidak bisa diakses — TIDAK mempengaruhi model RL
+FALLBACK_BUDGET = float(os.getenv("DEFAULT_MONTHLY_TARGET_RP", "50000"))
 TARIF_PER_KWH          = float(os.getenv("TARIF_PER_KWH", "1352.0"))
 TZ                     = pytz.timezone("Asia/Jakarta")
 
@@ -47,7 +49,6 @@ _DOW_MAX  = 6.0
 _DAYS_MAX = 31.0
 _WATT_MAX = 600.0
 
-#  FIX Bug 5: definisikan DEVICE secara eksplisit
 import torch
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -72,7 +73,7 @@ if "load_sarimax_artifact" not in globals():
 
 if "forecast_next_step" not in globals():
     def forecast_next_step(artifact, latest_features, current_watt, steps):
-        print("  forecast_next_step tidak ditemukan, menggunakan mock statis.")
+        print(" forecast_next_step tidak ditemukan, menggunakan mock statis.")
         return [current_watt] * steps
 
 
@@ -89,11 +90,11 @@ def initialize_firebase():
         key_dict = json.loads(FIREBASE_KEY_JSON)
         cred = credentials.Certificate(key_dict)
         firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
-        print(" Login Firebase via FIREBASE_KEY secret.")
+        print("Login Firebase via FIREBASE_KEY secret.")
     else:
         cred_path = Path(PATH_JSON)
         if not cred_path.exists():
-            raise ValueError("❌ FIREBASE_KEY tidak ada dan file JSON lokal tidak ditemukan.")
+            raise ValueError(" FIREBASE_KEY tidak ada dan file JSON lokal tidak ditemukan.")
         cred = credentials.Certificate(str(cred_path))
         firebase_admin.initialize_app(cred, {"databaseURL": DB_URL})
         print(" Login Firebase via file JSON lokal.")
@@ -134,7 +135,11 @@ def fetch_budget_context(now: datetime) -> Dict[str, Any]:
     dashboard = db.reference("dashboard_info").get() or {}
     history   = db.reference("rekap_harian/history").order_by_key().limit_to_last(30).get() or {}
 
-    monthly_target_rp = float(prefs.get("monthly_budget_rp", DEFAULT_MONTHLY_BUDGET) or DEFAULT_MONTHLY_BUDGET)
+    # Budget SELALU dari Firebase — user bisa ganti kapanpun dari dashboard
+    _raw_budget       = prefs.get("monthly_budget_rp") or prefs.get("budget_bulanan_rp")
+    monthly_target_rp = float(_raw_budget) if _raw_budget else FALLBACK_BUDGET
+    _source           = "Firebase user_preferences" if _raw_budget else f"FALLBACK ({FALLBACK_BUDGET:,.0f})"
+    print(f"   💰 Budget bulanan: Rp {monthly_target_rp:,.0f} (sumber: {_source})")
     today_cost_rp     = float(dashboard.get("biaya_hari_ini", 0) or 0)
     today_kwh         = float(dashboard.get("kwh_hari_ini", 0) or 0)
     days_in_month     = calendar.monthrange(now.year, now.month)[1]
@@ -198,7 +203,6 @@ def fetch_recent_daya_stats() -> Dict[str, float]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _device_flags(daya: float) -> Tuple[int, int, int, int, int]:
- 
     fa  = 1 if daya >= 316              else 0   # AC kompresor aktif
     fmc = 1 if 280 <= daya <= 315       else 0   # Magicom memasak
     fwh = 1 if 210 <= daya <  280       else 0   # Water Heater
@@ -225,6 +229,15 @@ def build_state_normalized(
     monthly_target_rp: float,
     budget_terpakai_rp: float,
 ) -> np.ndarray:
+    """
+    ✅ state dinormalisasi sesuai BudgetEnergyEnv._state() di training.
+    Urutan index [0..15]:
+      0  daya_n        1  suhu_n
+      2  fa_ac         3  fmc_magicom   4  fwh_wh   5  ftv_tv   6  flp_laptop
+      7  jam_n         8  dow_n         9  is_weekend  10 is_peak
+      11 day_progress  12 days_rem_n   13 pw_n
+      14 budget_n      15 gap_n
+    """
     # Flags: prioritaskan log_konfirmasi, fallback ke threshold daya
     if all(v != -1 for v in device_state.values()):
         fa  = int(bool(device_state.get("AC", 0)))
@@ -252,7 +265,7 @@ def build_state_normalized(
     days_n  = float(np.clip(days_rem,      0, _DAYS_MAX) / _DAYS_MAX)
     pw_n    = float(np.clip(prediksi_watt, 0, _WATT_MAX) / _WATT_MAX)
 
-    # budget_n dinamis: ratio pengeluaran berjalan vs target
+ 
     budget_n = float(np.clip(budget_terpakai_rp / max(monthly_target_rp, 1.0), 0.0, 2.0))
 
     # gap_n: estimasi biaya bulanan dari watt saat ini vs target
@@ -302,40 +315,51 @@ def load_rl_model():
     import torch.nn as nn
     from torch.distributions import Categorical
 
-    class _Actor(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Linear(OBS_DIM, HIDDEN_DIM), nn.Tanh(),
-                nn.Linear(HIDDEN_DIM, HIDDEN_DIM), nn.Tanh(),
-                nn.Linear(HIDDEN_DIM, N_ACTIONS),
-            )
-        def forward(self, x):
-            return Categorical(logits=self.net(x))
+    def _make_actor(obs_dim, hidden=HIDDEN_DIM, n_act=N_ACTIONS):
+        class _Actor(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.obs_dim = obs_dim
+                self.net = nn.Sequential(
+                    nn.Linear(obs_dim, hidden), nn.Tanh(),
+                    nn.Linear(hidden, hidden),  nn.Tanh(),
+                    nn.Linear(hidden, n_act),
+                )
+            def forward(self, x):
+                return Categorical(logits=self.net(x))
+        return _Actor()
 
-    # Coba model v2 (.pt) dulu
+
     if os.path.exists(RL_MODEL_PATH) and RL_MODEL_PATH.endswith(".pt"):
         try:
-            actor = _Actor().to(DEVICE)
-            ckpt  = torch.load(RL_MODEL_PATH, map_location=DEVICE)
+            ckpt     = torch.load(RL_MODEL_PATH, map_location=DEVICE)
+            obs_dim  = int(ckpt.get("obs_dim", OBS_DIM))   # baca dari metadata
+            actor    = _make_actor(obs_dim).to(DEVICE)
             actor.load_state_dict(ckpt.get("actor", ckpt))
             actor.eval()
-            print(f" Model RL v2 (custom ActorNetwork) dimuat dari {RL_MODEL_PATH}")
-            return actor, "custom_v2"
+            print(f" Model RL v2 dimuat dari {RL_MODEL_PATH} (obs_dim={obs_dim})")
+            if obs_dim != OBS_DIM:
+                print(f"     obs_dim model ({obs_dim}) ≠ OBS_DIM ({OBS_DIM})")
+                print(f"   State akan dipotong/dipad otomatis saat inference.")
+            return actor, f"custom_v2_{obs_dim}"
         except Exception as e:
             print(f"  Gagal muat {RL_MODEL_PATH}: {e}")
 
-    # Fallback ke legacy SB3
+    # ── Fallback ke legacy SB3 ────────────────────────────────────────────────
     if os.path.exists(LEGACY_RL_MODEL_PATH):
         try:
             from stable_baselines3 import PPO
-            model = PPO.load(LEGACY_RL_MODEL_PATH)
-            print(f" Model RL legacy SB3 dimuat dari {LEGACY_RL_MODEL_PATH}")
-            return model, "ppo_sb3"
+            model         = PPO.load(LEGACY_RL_MODEL_PATH)
+            legacy_obs_dim = int(model.observation_space.shape[0])
+            print(f" Model legacy SB3 dimuat dari {LEGACY_RL_MODEL_PATH} (obs_dim={legacy_obs_dim})")
+            if legacy_obs_dim != OBS_DIM:
+                print(f"   obs_dim model lama ({legacy_obs_dim}) ≠ OBS_DIM ({OBS_DIM})")
+                print(f"   State akan dipotong ke {legacy_obs_dim} dim saat inference.")
+            return model, f"ppo_sb3_{legacy_obs_dim}"
         except Exception as e:
-            print(f"  Gagal muat legacy {LEGACY_RL_MODEL_PATH}: {e}")
+            print(f" Gagal muat legacy {LEGACY_RL_MODEL_PATH}: {e}")
 
-    print("  Tidak ada model RL. Akan pakai rule-based fallback.")
+    print(" Tidak ada model RL — pakai rule-based fallback.")
     return None, "none"
 
 
@@ -343,22 +367,52 @@ def load_rl_model():
 # INFERENCE
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _adapt_state(state: np.ndarray, target_dim: int) -> np.ndarray:
+    """Sesuaikan panjang state dengan obs_dim model (potong atau pad)."""
+    cur = len(state)
+    if cur == target_dim:
+        return state
+    if cur > target_dim:
+        print(f"    State dipotong {cur}→{target_dim} dim (model lama)")
+        return state[:target_dim]
+    # cur < target_dim: pad dengan nol (jarang terjadi)
+    print(f"     State dipad {cur}→{target_dim} dim")
+    return np.pad(state, (0, target_dim - cur), constant_values=0.0).astype(np.float32)
+
+
 def predict_action(state: np.ndarray, model, model_type: str) -> dict:
-    if model_type == "custom_v2":
+    if model_type.startswith("custom_v2"):
+        # Baca obs_dim dari model_type string, misal "custom_v2_16"
+        try:    model_obs_dim = int(model_type.split("_")[-1])
+        except: model_obs_dim = OBS_DIM
+        s_in = _adapt_state(state, model_obs_dim)
         with torch.no_grad():
-            t     = torch.FloatTensor(state).unsqueeze(0).to(DEVICE)  # ✅ FIX Bug 5
+            t     = torch.FloatTensor(s_in).unsqueeze(0).to(DEVICE)
             dist  = model(t)
             probs = dist.probs.squeeze(0).cpu().numpy()
         action = int(probs.argmax())
-    elif model_type == "ppo_sb3":
-        action, _ = model.predict(state, deterministic=True)
+
+    elif model_type.startswith("ppo_sb3"):
+        # Baca obs_dim dari model_type string, misal "ppo_sb3_7"
+        try:    model_obs_dim = int(model_type.split("_")[-1])
+        except: model_obs_dim = OBS_DIM
+        s_in      = _adapt_state(state, model_obs_dim)
+        action, _ = model.predict(s_in, deterministic=True)
         action    = int(action)
         probs     = np.zeros(N_ACTIONS); probs[action] = 1.0
+        if model_obs_dim != OBS_DIM:
+            print(f"     Memakai model lama obs_dim={model_obs_dim}. "
+                  f"Upload actor_rl_v11.pt ke Drive untuk hasil optimal.")
+
     else:
-        # Rule-based fallback: pilih aksi berdasarkan gap_n (index 15)
-        gap_n  = float(state[15])
-        action = 1 if gap_n > 0.3 else 0
-        probs  = np.zeros(N_ACTIONS); probs[action] = 1.0
+        # Rule-based fallback berdasarkan gap_n + budget_n
+        gap_n    = float(state[15]) if len(state) > 15 else 0.0
+        budget_n = float(state[14]) if len(state) > 14 else 0.0
+        if   gap_n > 0.5 or budget_n > 1.2: action = 1   # over budget parah → matikan AC
+        elif gap_n > 0.2:                    action = 3   # agak over → kurangi WH
+        else:                                action = 0   # aman → tidak ada tindakan
+        probs = np.zeros(N_ACTIONS); probs[action] = 1.0
+        print(f"     Rule-based fallback: gap_n={gap_n:.2f} budget_n={budget_n:.2f} → aksi={action}")
 
     return {
         "action":        action,
@@ -372,17 +426,16 @@ def predict_action(state: np.ndarray, model, model_type: str) -> dict:
 
 
 def map_rl_action_to_text(action: int) -> str:
-    """ FIX Bug 4: mapping aksi 2,3,4 diperbaiki sesuai ACTION_LABELS."""
     if action == 1:
-        return "⚠️ Matikan atau naikkan setpoint AC 1–2°C untuk menekan beban puncak."
+        return " Matikan atau naikkan setpoint AC 1–2°C untuk menekan beban puncak."
     if action == 2:
-        return "⚠️ Gunakan Magicom seperlunya atau pindahkan ke mode warm saat nasi sudah matang."
+        return " Gunakan Magicom seperlunya atau pindahkan ke mode warm saat nasi sudah matang."
     if action == 3:
-        return "⚠️ Kurangi durasi Water Heater karena ini salah satu beban terbesar."
+        return " Kurangi durasi Water Heater karena ini salah satu beban terbesar."
     if action == 4:
-        return "💡 Matikan TV saat tidak ditonton untuk menjaga konsumsi tetap hemat."
+        return " Matikan TV saat tidak ditonton untuk menjaga konsumsi tetap hemat."
     if action == 5:
-        return "💡 Aktifkan mode hemat daya Laptop atau cabut charger saat baterai sudah cukup."
+        return " Aktifkan mode hemat daya Laptop atau cabut charger saat baterai sudah cukup."
     return " Pola beban saat ini masih aman. Pertahankan kebiasaan hemat hari ini."
 
 
@@ -428,9 +481,9 @@ def build_budget_recommendation(
         )
 
     saving_badge = (
-        f" Hemat {daily_saving_pct:.1f}% dibanding rata-rata harian biasa"
+        f"🟢 Hemat {daily_saving_pct:.1f}% dibanding rata-rata harian biasa"
         if daily_saving_pct > 0
-        else " Belum ada penghematan signifikan dibanding rata-rata harian"
+        else "🟡 Belum ada penghematan signifikan dibanding rata-rata harian"
     )
 
     return {
@@ -461,13 +514,13 @@ def main():
     initialize_firebase()
 
     # 2. Load SARIMAX
-    print(" Memuat model SARIMAX...")
+    print("🔄 Memuat model SARIMAX...")
     sarimax_path     = SARIMAX_MODEL_PATH if os.path.exists(SARIMAX_MODEL_PATH) else LEGACY_SARIMAX_MODEL_PATH
     sarimax_artifact = load_sarimax_artifact(sarimax_path)
-    print(f"    SARIMAX dimuat: {sarimax_path} (type={sarimax_artifact.get('model_type')})")
+    print(f"   ✅ SARIMAX dimuat: {sarimax_path} (type={sarimax_artifact.get('model_type')})")
 
     # 3. Load RL
-    print(" Memuat model RL...")
+    print("🔄 Memuat model RL...")
     model_rl, model_type = load_rl_model()
 
     # 4. Ambil data Firebase
@@ -482,8 +535,8 @@ def main():
     arus     = monitoring_state["Arus"]
     tegangan = monitoring_state["Tegangan"]
 
-    print(f"\n Data sensor: Daya={daya}W  Suhu={suhu}°C  Arus={arus}A  Tegangan={tegangan}V")
-    print(f" Device state: {device_state}")
+    print(f"\n📡 Data sensor: Daya={daya}W  Suhu={suhu}°C  Arus={arus}A  Tegangan={tegangan}V")
+    print(f"🔌 Device state: {device_state}")
 
     # 5. Forecast SARIMAX
     latest_features = {
@@ -534,7 +587,7 @@ def main():
     rl_result = predict_action(state, model_rl, model_type)
     rl_action = rl_result["action"]
 
-    print(f"\n RL action: {rl_action} — {rl_result['label']}  (reduksi {rl_result['reduction_pct']:.0f}%)")
+    print(f"\n🤖 RL action: {rl_action} — {rl_result['label']}  (reduksi {rl_result['reduction_pct']:.0f}%)")
     print(f"   gap_n={rl_result['gap_n']:.3f}  budget_n={rl_result['budget_n']:.3f}  pred_watt={rl_result['prediksi_watt']:.1f}W")
 
     # 7. Rekomendasi teks
@@ -545,8 +598,8 @@ def main():
         rl_action=rl_action,
     )
 
-    print(f" Rekomendasi: {recommendation['combined_advice']}")
-    print(f"  Indikator: {recommendation['saving_badge']}")
+    print(f"💡 Rekomendasi: {recommendation['combined_advice']}")
+    print(f"🏷️  Indikator: {recommendation['saving_badge']}")
 
     # 8. Push ke Firebase
     db.reference("Hasil_AI").set({
@@ -580,7 +633,7 @@ def main():
         "waktu_update":                  now.strftime("%Y-%m-%d %H:%M:%S"),
     })
 
-    print("\n Laporan AI berhasil dikirim ke Firebase node 'Hasil_AI'.")
+    print("\n✅ Laporan AI berhasil dikirim ke Firebase node 'Hasil_AI'.")
 
 
 if __name__ == "__main__":
