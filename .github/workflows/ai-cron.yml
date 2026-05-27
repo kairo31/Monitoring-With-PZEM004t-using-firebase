@@ -40,7 +40,7 @@ jobs:
       SARIMAX_DRIVE_URL:           ${{ secrets.SARIMAX_DRIVE_URL }}
       SARIMAX_KWH_DRIVE_URL:       ${{ secrets.SARIMAX_KWH_DRIVE_URL }}
       DEFAULT_SARIMAX_DAYA_URL:    https://drive.google.com/file/d/1syzoFBIGYGLbYkzGYgP-n0zodYRz-Uie/view?usp=drive_link
-      DEFAULT_SARIMAX_KWH_URL:     https://drive.google.com/file/d/1uquQtO9A7HRiwSGUqj-30Y7jxZparoFn/view?usp=drive_link
+      DEFAULT_SARIMAX_KWH_URL:     https://drive.google.com/file/d/1kDKgUuE1hn-pdmnL6Ufz5pSdutY1JN-E/view?usp=drive_link
       DEFAULT_RL_URL:              https://drive.google.com/file/d/1R7ap0c_9wXeSXcYgL-a55IoOjSFYRaaP/view?usp=drive_link
 
     steps:
