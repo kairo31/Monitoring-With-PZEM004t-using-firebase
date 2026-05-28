@@ -80,8 +80,6 @@ ACTION_REDUCTION = {
     0: 0.00, 1: 0.30, 2: 0.10, 3: 0.20, 4: 0.05, 5: 0.05,
 }
 
-# Firebase RTDB melarang karakter $ # [ ] / . dalam KEY (bukan value)
-# ACTION_LABELS_FB: versi aman untuk dipakai sebagai key di Firebase
 ACTION_LABELS_FB = {
     0: "Tidak_ada_tindakan",
     1: "Kurangi_AC",
