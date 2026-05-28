@@ -12,21 +12,7 @@ import pytz
 # ── Firebase ──────────────────────────────────────────────────────────────────
 try:
     import firebase_admin
-    from firebase_admin import credentials, db"""
-pekerja_ai.py — Inference Worker untuk RL Budget Energy v2
-===========================================================
-CHANGELOG FIX:
-  1. build_state_from_values() — urutan flag device disamakan dengan
-     BudgetEnergyEnv._state() di rl_budget_v2.py:
-     [fa_ac, fmc_magicom, fwh_wh, ftv_tv, flp_laptop]
-  2. _device_flags() — threshold disamakan dengan Cell 4 training v11
-  3. Semua state dinormalisasi sebelum dikirim ke model
-     (daya_n, suhu_n, pred_watt_n, budget_n, gap_n, dsb.)
-  4. map_rl_action_to_text() — mapping aksi 2,3,4 diperbaiki
-  5. DEVICE didefinisikan secara eksplisit
-  6. run_inference_cycle() dihapus dari main() agar tidak dobel
-"""
-
+    from firebase_admin import credentials, db
 import os
 import json
 import calendar
