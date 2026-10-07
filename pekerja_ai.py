@@ -17,13 +17,13 @@ try:
 except ImportError:
     FIREBASE_AVAILABLE = False
 
-DB_URL               = os.getenv("FIREBASE_DB_URL", "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app")
-PATH_JSON            = os.getenv("FIREBASE_CREDENTIALS", "/content/drive/MyDrive/SKRIPSHIT/firebase-project/firebase-project/serviceAccountKey.json")
+DB_URL               = os.getenv("FIREBASE_DB_URL", "##")
+PATH_JSON            = os.getenv("FIREBASE_CREDENTIALS", "####")
 FIREBASE_KEY_JSON    = os.getenv("FIREBASE_KEY")
 
-RL_MODEL_PATH        = os.getenv("RL_MODEL_PATH", "model_ai/model_rl_budget_v2.pt")
-LEGACY_RL_MODEL_PATH = os.getenv("LEGACY_RL_MODEL_PATH", "model_ai/model_rl_budget.zip")
-SARIMAX_MODEL_PATH   = os.getenv("SARIMAX_MODEL_PATH", "model_ai/sarimax_bundle.pkl")
+RL_MODEL_PATH        = os.getenv("RL_MODEL_PATH", "###")
+LEGACY_RL_MODEL_PATH = os.getenv("LEGACY_RL_MODEL_PATH", "###")
+SARIMAX_MODEL_PATH   = os.getenv("SARIMAX_MODEL_PATH", "###")
 LEGACY_SARIMAX_MODEL_PATH = os.getenv("LEGACY_SARIMAX_MODEL_PATH", "model_ai/legacy_sarimax.pkl")
 
 # Budget: SELALU diambil dari Firebase user_preferences/monthly_budget_rp
