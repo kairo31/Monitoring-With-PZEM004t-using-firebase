@@ -30,10 +30,10 @@ void setup() {
   dht.begin();
 
   // Koneksi WiFi
-  wifiMulti.addAP("ppp", "yudistira");
-  wifiMulti.addAP("fh_ea0ad0", "wlan15f52f");
-  wifiMulti.addAP("Andykh1", "12maret11");
-  wifiMulti.addAP("Andykh2", "12maret11");
+  wifiMulti.addAP("nama wifi", "sandi");
+  wifiMulti.addAP("nama wifi", "sandi");
+  wifiMulti.addAP("nama wifi", "sandi");
+  wifiMulti.addAP("nama wifi", "sandi");
 
   Serial.print("Menghubungkan WiFi...");
   while (wifiMulti.run() != WL_CONNECTED) {
@@ -87,10 +87,10 @@ void loop() {
         
         Serial.print("Pushing data ke history... ");
         if (Firebase.pushJSON(fbdo, "/history", hist)) {
-          Serial.println("✅ OK");
+          Serial.println(" OK");
           lastHistoryMillis = millis();
         } else {
-          Serial.println("❌ GAGAL: " + fbdo.errorReason());
+          Serial.println(" GAGAL: " + fbdo.errorReason());
         }
       }
     }
