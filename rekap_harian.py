@@ -9,7 +9,7 @@ from firebase_admin import credentials, db
 # ==========================================
 # 1. KONFIGURASI DATABASE DAN TARIF
 # ==========================================
-DB_URL = 'https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app/'
+DB_URL = 'https://test-reading-the-pzem-default-####'
 TARIF_PER_KWH = 1352.00  # Tarif PLN 900VA Non-Subsidi
 
 if not firebase_admin._apps:
