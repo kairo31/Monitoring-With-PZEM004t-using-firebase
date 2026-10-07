@@ -13,8 +13,8 @@ import pytz
 # ==========================================
 # KONFIGURASI PARAMETER 
 # ==========================================
-PATH_JSON = '/content/drive/MyDrive/SKRIPSHIT/firebase-project/firebase-project/serviceAccountKey.json'
-DB_URL = 'https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app'
+PATH_JSON = '###'
+DB_URL = '###'
 HISTORY_NODE = 'history'
 
 SARIMAX_ORDER = (1, 1, 1)
