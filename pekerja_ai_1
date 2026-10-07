@@ -22,7 +22,7 @@ print(" Pekerja AI berjalan...")
 
 DB_URL = os.getenv(
     "FIREBASE_DB_URL",
-    "https://test-reading-the-pzem-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "###",
 )
 SARIMAX_MODEL_PATH = os.getenv("SARIMAX_MODEL_PATH", "model_ai/sarimax_bundle.pkl")
 RL_MODEL_PATH = os.getenv("RL_MODEL_PATH", "model_ai/model_rl_budget_v2.pt")
