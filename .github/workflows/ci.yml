@@ -14,9 +14,9 @@ jobs:
       SARIMAX_DRIVE_FILE_ID: ${{ secrets.SARIMAX_DRIVE_FILE_ID }}
       RL_DRIVE_FILE_ID: ${{ secrets.RL_DRIVE_FILE_ID }}
       SARIMAX_KWH_DRIVE_URL: ${{ secrets.SARIMAX_KWH_DRIVE_URL }}
-      DEFAULT_SARIMAX_DAYA_URL: https://drive.google.com/file/d/1syzoFBIGYGLbYkzGYgP-n0zodYRz-Uie/view?usp=drive_link
-      DEFAULT_SARIMAX_KWH_URL: https://drive.google.com/file/d/1uquQtO9A7HRiwSGUqj-30Y7jxZparoFn/view?usp=drive_link
-      DEFAULT_RL_URL: https://drive.google.com/file/d/1Q5G4sOR4wi-5OWqes2zwU4AvMni8meMY/view?usp=drive_link
+      DEFAULT_SARIMAX_DAYA_URL: https://drive.google.com/file
+      DEFAULT_SARIMAX_KWH_URL: https://drive.google.com/file
+      DEFAULT_RL_URL: https://drive.google.com/file/
       RL_MODEL_PATH: model_ai/model_rl_budget_v2.pt
       LEGACY_RL_MODEL_PATH: model_ai/model_rl_budget.zip
 
