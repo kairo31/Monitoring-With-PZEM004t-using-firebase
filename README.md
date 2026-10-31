@@ -1,7 +1,7 @@
 
 # ⚡ Smart Power Monitoring — PZEM-004T + Firebase + AI
 
-🌐 **Language:** **English** | [Bahasa Indonesia](README.id.md)
+🌐 **Language:** **English** |
 
 A household electricity monitoring system built on an **ESP32 + PZEM-004T** that streams data in real time to **Firebase Realtime Database**, visualizes it on a web dashboard, and adds **AI** for load forecasting (SARIMAX) and energy-saving recommendations that respect a monthly budget (Reinforcement Learning).
 
